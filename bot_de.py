@@ -15,7 +15,8 @@ Credi2GO – Internal Telegram Bot (Germany)
 """
 
 from __future__ import annotations
-
+from reportlab.graphics.shapes import Drawing, Rect, Circle
+from reportlab.graphics import renderPDF
 import os, re, logging, io
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -130,6 +131,30 @@ def img_box(path: str, max_h: float) -> Image | None:
         return Image(path, width=iw * scale, height=ih * scale)
     except Exception as e:
         log.error("IMAGE LOAD ERROR %s: %s", path, e); return None
+
+def exclam_flowable(h_px: float = 28) -> renderPDF.GraphicsFlowable:
+    """
+    Векторный красный восклицательный знак высотой h_px (пойнты).
+    Смотрится корректно в таблицах/плашках независимо от фона.
+    """
+    h = float(h_px)
+    w = h * 0.42  # аккуратная пропорция
+    d = Drawing(w, h)
+
+    # «палка» с небольшим скруглением
+    bar_w = w * 0.36
+    bar_h = h * 0.68
+    bar_x = (w - bar_w) / 2.0
+    bar_y = h * 0.20
+    d.add(Rect(bar_x, bar_y, bar_w, bar_h, rx=bar_w * 0.25, ry=bar_w * 0.25,
+               fillColor=colors.HexColor("#D73737"), strokeWidth=0))
+
+    # «точка»
+    r = w * 0.18
+    d.add(Circle(w / 2.0, h * 0.10, r, fillColor=colors.HexColor("#D73737"), strokeWidth=0))
+
+    return renderPDF.GraphicsFlowable(d)
+
 
 def draw_border_and_pagenum(canv, doc):
     w, h = A4
@@ -572,8 +597,8 @@ def aml_build_pdf(values: dict) -> bytes:
     page1.append(Spacer(1, 5))
 
     # --- ПРЕАМБУЛА В ПЛАШКЕ С ИКОНКАМИ ---
-    warn_icon_l = img_box(ASSETS["exclam"], 10*mm)
-    warn_icon_r = img_box(ASSETS["exclam"], 10*mm)
+    warn_icon_l = exclam_flowable(10 * mm)
+    warn_icon_r = exclam_flowable(10 * mm)
     preamble_text = (
         "Nach einer erneuten internen Prüfung (deren Verfahren und Methodik nicht offengelegt werden) "
         "wurde Ihr Profil vom Kreditgeber einer erhöhten Wahrscheinlichkeit von Zahlungsverzug bzw. "
