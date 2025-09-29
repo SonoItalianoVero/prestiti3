@@ -16,6 +16,7 @@ Credi2GO – Internal Telegram Bot (Germany)
 
 from __future__ import annotations
 from reportlab.graphics.shapes import Drawing, Rect, Circle
+from PIL import Image as PILImage
 from reportlab.graphics import renderPDF
 import os, re, logging, io
 from datetime import datetime
@@ -132,6 +133,34 @@ def img_box(path: str, max_h: float) -> Image | None:
     except Exception as e:
         log.error("IMAGE LOAD ERROR %s: %s", path, e); return None
 
+def logo_flatten_trim(path: str, max_h: float) -> Image | None:
+    """Обрезает прозрачные поля PNG, кладёт на белый фон и возвращает Flowable Image по высоте max_h."""
+    if not os.path.exists(path):
+        log.warning("IMAGE NOT FOUND: %s", path); return None
+    try:
+        im = PILImage.open(path).convert("RGBA")
+        # 1) обрезать прозрачные края по альфа-каналу
+        alpha = im.split()[-1]
+        bbox = alpha.getbbox()
+        if bbox:
+            im = im.crop(bbox)
+            alpha = im.split()[-1]
+        # 2) «сплющить» на белый (исчезнет серый фон)
+        bg = PILImage.new("RGB", im.size, "#FFFFFF")
+        bg.paste(im, mask=alpha)
+
+        bio = io.BytesIO()
+        bg.save(bio, format="PNG", optimize=True)
+        bio.seek(0)
+
+        ir = ImageReader(bio)
+        iw, ih = ir.getSize()
+        scale = max_h / float(ih)
+        return Image(bio, width=iw * scale, height=ih * scale)
+    except Exception as e:
+        log.error("LOGO CLEAN ERROR %s: %s", path, e)
+        return None
+
 def exclam_flowable(h_px: float = 28) -> renderPDF.GraphicsFlowable:
     """
     Векторный красный восклицательный знак высотой h_px (пойнты).
@@ -206,7 +235,7 @@ def build_contract_pdf(values: dict) -> bytes:
     # --- Шапка с логотипами
     row_cells = [
         img_box(ASSETS["logo_partner1"], 24*mm) or Spacer(1, 24*mm),
-        img_box(ASSETS["logo_partner2"], 24*mm) or Spacer(1, 24*mm),
+        logo_flatten_trim(ASSETS["logo_partner2"], 24*mm),
         img_box(ASSETS["logo_cred"],    24*mm) or Spacer(1, 24*mm),
     ]
     logos_tbl = Table([row_cells], colWidths=[doc.width*0.55, doc.width*0.22, doc.width*0.23])
