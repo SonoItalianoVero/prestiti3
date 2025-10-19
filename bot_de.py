@@ -98,12 +98,14 @@ def get_bank_profile(cc: str) -> dict:
     return BANKS.get(cc.upper(), BANKS["DE"])
 
 def asset_path(*candidates: str) -> str:
-    """Вернёт первый существующий файл из candidates в ./assets/. Игнор регистра/вариантов."""
+    """Возвращает первый найденный файл из candidates в ./assets/ ИЛИ в корне проекта."""
+    roots = ("assets", ".", "./assets", "./")
     for name in candidates:
-        p = os.path.join("assets", name)
-        if os.path.exists(p):
-            return p
-    # если ничего не нашли — вернём первый путь (img_box сам залогирует предупреждение)
+        for root in roots:
+            p = os.path.join(root, name)
+            if os.path.exists(p):
+                return p
+    log.warning("ASSET NOT FOUND, tried: %s", ", ".join(candidates))
     return os.path.join("assets", candidates[0])
 
 
@@ -159,6 +161,41 @@ def img_box(path: str, max_h: float, max_w: float | None = None) -> Image | None
         return Image(path, width=iw * scale, height=ih * scale)
     except Exception as e:
         log.error("IMAGE LOAD ERROR %s: %s", path, e); return None
+def _logo_img_at_height(path: str, h: float):
+    """Готовит логотип нужной высоты h (мм) с белым фоном; возвращает (Image/Spacer, фактическая ширина)."""
+    im = logo_flatten_trim(path, h)
+    if not im:
+        return Spacer(1, h), 0.0
+    return im, float(im.drawWidth)
+
+def logos_three_even(row_width: float, h: float = 24*mm) -> Table:
+    """
+    Три логотипа в одну строку: одинаковая высота, равномерные отступы между ними.
+    Если суммарно не влезают — пропорционально уменьшаем высоту.
+    """
+    min_gap = 6*mm
+    paths = [ASSETS["logo_partner1"], ASSETS["logo_partner2"], ASSETS["logo_cred"]]
+
+    # подбираем высоту так, чтобы всё уместилось по ширине
+    while True:
+        items = [_logo_img_at_height(p, h) for p in paths]
+        widths = [w for _, w in items]
+        total_w = sum(widths)
+        if total_w + 2*min_gap <= row_width or h <= 12*mm:
+            break
+        scale = (row_width - 2*min_gap) / max(total_w, 1.0)
+        h *= scale  # ширины масштабируются линейно от высоты
+
+    gap = max((row_width - sum(widths)) / 2.0, min_gap)
+    cells = [items[0][0], Spacer(1, h), items[1][0], Spacer(1, h), items[2][0]]
+    tbl = Table([cells], colWidths=[widths[0], gap, widths[1], gap, widths[2]], hAlign="CENTER")
+    tbl.setStyle(TableStyle([
+        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+        ("ALIGN",(0,0),(-1,-1),"CENTER"),
+        ("LEFTPADDING",(0,0),(-1,-1),0), ("RIGHTPADDING",(0,0),(-1,-1),0),
+        ("TOPPADDING",(0,0),(-1,-1),0),  ("BOTTOMPADDING",(0,0),(-1,-1),0),
+    ]))
+    return tbl
 
 def logo_flatten_trim(path: str, max_h: float, max_w: float | None = None) -> Image | None:
     if not os.path.exists(path):
@@ -248,21 +285,8 @@ def build_contract_pdf(values: dict) -> bytes:
 
     story = []
 
-    # --- Шапка с логотипами (3 равные колонки, центрирование, ограничение по ширине колонки)
-    col_w = doc.width / 3.0
-    row_cells = [
-        logo_flatten_trim(ASSETS["logo_partner1"], 24 * mm, col_w * 0.9) or Spacer(1, 24 * mm),
-        logo_flatten_trim(ASSETS["logo_partner2"], 24 * mm, col_w * 0.9) or Spacer(1, 24 * mm),
-        logo_flatten_trim(ASSETS["logo_cred"], 24 * mm, col_w * 0.9) or Spacer(1, 24 * mm),
-    ]
-    logos_tbl = Table([row_cells], colWidths=[col_w, col_w, col_w], hAlign="CENTER")
-    logos_tbl.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-    ]))
-    story += [logos_tbl, Spacer(1, 4)]
+    # --- Шапка с логотипами (равномерные 3 лого)
+    story += [logos_three_even(doc.width, h=24 * mm), Spacer(1, 4)]
 
     # --- Титул
     story.append(Paragraph(f"{bank_name} – Vorabinformation / Vorvertrag #2690497", styles["H1Mono"]))
