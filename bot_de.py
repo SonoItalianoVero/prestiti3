@@ -4,7 +4,7 @@ HigobiGMBH – Internal Telegram Bot (DE/AT)
 Операторский бот (RU интерфейс) -> PDF (DE).
 Зависимости: python-telegram-bot==20.7, reportlab
 Ассеты (имена точные):
-  ./assets/HIGOBI_LOGO.PNG
+  ./assets/HIGOBI_LOGO.png (или .PNG — учитываем оба)
   ./assets/santander1.png
   ./assets/santander2.png
   ./assets/wagnersign.png
@@ -15,20 +15,22 @@ HigobiGMBH – Internal Telegram Bot (DE/AT)
 """
 
 from __future__ import annotations
-from reportlab.graphics.shapes import Drawing, Rect, Circle
-from PIL import Image as PILImage
-from reportlab.graphics import renderPDF
-import os, re, logging, io
+
+import io, os, re, logging
+from pathlib import Path
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from decimal import Decimal
+
+from PIL import Image as PILImage
+from reportlab.graphics import renderPDF
+from reportlab.graphics.shapes import Drawing, Rect, Circle
+
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InputFile
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     ConversationHandler, ContextTypes, filters
 )
-from pathlib import Path
-BASE_DIR = Path(__file__).resolve().parent
 
 # ---- logging
 logging.basicConfig(
@@ -51,6 +53,8 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
+BASE_DIR = Path(__file__).resolve().parent
+
 # ---------- TIME ----------
 TZ_DE = ZoneInfo("Europe/Berlin")
 def now_de_date() -> str:
@@ -70,7 +74,7 @@ COMPANY = {
     "legal": "HIGOBI Immobilien GMBH",
     "addr":  "Johann-Georg-Schlosser-Straße 11, 76149 Karlsruhe, Deutschland",
     "reg":   "Handelsregister: HRB 755353; Stammkapital: 25.002,00 EUR",
-    "rep":   "",  # при необходимости подставьте Geschäftsführer
+    "rep":   "",
     "contact": "Telegram @higobi_de_at_bot",
     "email": "higobikontakt@inbox.eu",
     "web": "higobi-gmbh.de",
@@ -87,20 +91,14 @@ SEPA = {"ci": "DE98ZZZ00123950001", "prenotice_days": 7}
 
 # ---------- BANK PROFILES ----------
 BANKS = {
-    "DE": {
-        "name": "Santander Consumer Bank AG",
-        "addr": "Budapester Str. 37, 10787 Berlin",
-    },
-    "AT": {
-        "name": "Santander Consumer Bank GmbH",
-        "addr": "Wagramer Straße 19, 1220 Wien",
-    },
+    "DE": {"name": "Santander Consumer Bank AG", "addr": "Budapester Str. 37, 10787 Berlin"},
+    "AT": {"name": "Santander Consumer Bank GmbH", "addr": "Wagramer Straße 19, 1220 Wien"},
 }
 def get_bank_profile(cc: str) -> dict:
     return BANKS.get(cc.upper(), BANKS["DE"])
 
 def asset_path(*candidates: str) -> str:
-    """Ищем ассет сначала рядом с модулем, затем в CWD, ASSETS_DIR и /mnt/data."""
+    """Ищем ассет: рядом с модулем, затем CWD, затем ASSETS_DIR, затем /mnt/data."""
     roots = [BASE_DIR / "assets", BASE_DIR, Path.cwd() / "assets", Path.cwd()]
     env_dir = os.getenv("ASSETS_DIR")
     if env_dir:
@@ -114,14 +112,16 @@ def asset_path(*candidates: str) -> str:
                 return str(p)
 
     log.warning("ASSET NOT FOUND, tried: %s", ", ".join(candidates))
+    # Вернём ожидаемый путь рядом с модулем (не критично, просто для логов)
     return str((BASE_DIR / "assets" / candidates[0]).resolve())
-
 
 # ---------- ASSETS ----------
 ASSETS = {
     "logo_partner1": asset_path("santander1.png", "SANTANDER1.PNG"),
     "logo_partner2": asset_path("santander2.png", "SANTANDER2.PNG"),
-    "logo_higobi":   asset_path("HIGOBI_LOGO.PNG", "higobi_logo.png", "higobi_logo.PNG", "HIGOBI_logo.png"),
+    # ВАЖНО: добавили точное имя 'HIGOBI_LOGO.png' (регистрозависимо)
+    "logo_higobi":   asset_path("HIGOBI_LOGO.PNG", "HIGOBI_LOGO.png",
+                                "higobi_logo.png", "higobi_logo.PNG", "HIGOBI_logo.png"),
     "sign_bank":     asset_path("wagnersign.png", "wagnersign.PNG"),
     "sign_c2g":      asset_path("duraksign.png", "duraksign.PNG"),
     "exclam":        asset_path("exclam.png", "exclam.PNG"),
@@ -143,7 +143,8 @@ MAIN_KB = ReplyKeyboardMarkup(
 
 # ---------- HELPERS ----------
 def fmt_eur(v: float | Decimal) -> str:
-    if isinstance(v, Decimal): v = float(v)
+    if isinstance(v, Decimal):
+        v = float(v)
     s = f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     return f"{s} €"
 
@@ -152,61 +153,31 @@ def parse_num(txt: str) -> float:
     return float(t)
 
 def monthly_payment(principal: float, tan_percent: float, months: int) -> float:
-    if months <= 0: return 0.0
+    if months <= 0:
+        return 0.0
     r = (tan_percent / 100.0) / 12.0
-    if r == 0: return principal / months
+    if r == 0:
+        return principal / months
     return principal * (r / (1 - (1 + r) ** (-months)))
 
 def img_box(path: str, max_h: float, max_w: float | None = None) -> Image | None:
     if not os.path.exists(path):
-        log.warning("IMAGE NOT FOUND: %s", os.path.abspath(path)); return None
+        log.warning("IMAGE NOT FOUND: %s", os.path.abspath(path))
+        return None
     try:
         ir = ImageReader(path); iw, ih = ir.getSize()
-        # масштабируем так, чтобы вписаться и по высоте, и по ширине (если задана)
         scale_h = max_h / float(ih)
         scale_w = (max_w / float(iw)) if max_w else scale_h
         scale = min(scale_h, scale_w)
         return Image(path, width=iw * scale, height=ih * scale)
     except Exception as e:
-        log.error("IMAGE LOAD ERROR %s: %s", path, e); return None
-def _logo_img_at_height(path: str, h: float):
-    """Готовит логотип нужной высоты h (мм) с белым фоном; возвращает (Image/Spacer, фактическая ширина)."""
-    im = logo_flatten_trim(path, h)
-    if not im:
-        return Spacer(1, h), 0.0
-    return im, float(im.drawWidth)
-def logos_three_even(row_width: float, h: float = 24*mm) -> Table:
-    """
-    Три логотипа в одну строку: одинаковая высота, равномерные отступы между ними.
-    Если суммарно не влезают — пропорционально уменьшаем высоту.
-    """
-    min_gap = 6*mm
-    paths = [ASSETS["logo_partner1"], ASSETS["logo_partner2"], ASSETS["logo_higobi"]]
-
-    # подбираем высоту так, чтобы всё уместилось по ширине
-    while True:
-        items = [_logo_img_at_height(p, h) for p in paths]
-        widths = [w for _, w in items]
-        total_w = sum(widths)
-        if total_w + 2*min_gap <= row_width or h <= 12*mm:
-            break
-        scale = (row_width - 2*min_gap) / max(total_w, 1.0)
-        h *= scale  # ширины масштабируются линейно от высоты
-
-    gap = max((row_width - sum(widths)) / 2.0, min_gap)
-    cells = [items[0][0], Spacer(1, h), items[1][0], Spacer(1, h), items[2][0]]
-    tbl = Table([cells], colWidths=[widths[0], gap, widths[1], gap, widths[2]], hAlign="CENTER")
-    tbl.setStyle(TableStyle([
-        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-        ("ALIGN",(0,0),(-1,-1),"CENTER"),
-        ("LEFTPADDING",(0,0),(-1,-1),0), ("RIGHTPADDING",(0,0),(-1,-1),0),
-        ("TOPPADDING",(0,0),(-1,-1),0),  ("BOTTOMPADDING",(0,0),(-1,-1),0),
-    ]))
-    return tbl
+        log.error("IMAGE LOAD ERROR %s: %s", path, e)
+        return None
 
 def logo_flatten_trim(path: str, max_h: float, max_w: float | None = None) -> Image | None:
     if not os.path.exists(path):
-        log.warning("IMAGE NOT FOUND: %s", path); return None
+        log.warning("IMAGE NOT FOUND: %s", path)
+        return None
     try:
         im = PILImage.open(path).convert("RGBA")
         alpha = im.split()[-1]
@@ -230,8 +201,9 @@ def logo_flatten_trim(path: str, max_h: float, max_w: float | None = None) -> Im
     except Exception as e:
         log.error("LOGO CLEAN ERROR %s: %s", path, e)
         return None
+
 def logo_img_smart(path: str, max_h: float, max_w: float | None = None):
-    """Пробуем очистку+обрезку; если не вышло — грузим как есть; если и это не вышло — Spacer."""
+    """Сначала пробуем очистку/обрезку; если не вышло — грузим как есть; иначе Spacer."""
     im = logo_flatten_trim(path, max_h, max_w)
     if not im:
         try:
@@ -246,17 +218,24 @@ def logo_img_smart(path: str, max_h: float, max_w: float | None = None):
             return Spacer(1, max_h)
     return im
 
-def logos_three(doc_width: float, h: float = 24*mm) -> Table:
-    col = doc_width / 3.0
-    row = [
-        logo_img_smart(ASSETS["logo_partner1"], h, col*0.9),
-        logo_img_smart(ASSETS["logo_partner2"], h, col*0.9),
-        logo_img_smart(ASSETS["logo_higobi"],   h, col*0.9),
-    ]
-    t = Table([row], colWidths=[col, col, col], hAlign="CENTER")
+def logos_header_weighted(row_width: float, h_center: float = 26*mm, side_ratio: float = 0.82) -> Table:
+    """
+    Шапка: HIGOBI слева, Santander по центру (крупнее), печать справа (чуть меньше).
+    Боковые лого ~ side_ratio от центрального по высоте. Выравнивания: L / C / R.
+    """
+    col = row_width / 3.0
+    h_side = h_center * side_ratio
+
+    left   = logo_img_smart(ASSETS["logo_higobi"],   h_side,  col*0.95)
+    center = logo_img_smart(ASSETS["logo_partner1"], h_center, col*0.95)
+    right  = logo_img_smart(ASSETS["logo_partner2"], h_side,  col*0.95)
+
+    t = Table([[left, center, right]], colWidths=[col, col, col], hAlign="CENTER")
     t.setStyle(TableStyle([
         ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-        ("ALIGN",(0,0),(-1,-1),"CENTER"),
+        ("ALIGN",(0,0),(0,0),"LEFT"),
+        ("ALIGN",(1,0),(1,0),"CENTER"),
+        ("ALIGN",(2,0),(2,0),"RIGHT"),
         ("LEFTPADDING",(0,0),(-1,-1),0), ("RIGHTPADDING",(0,0),(-1,-1),0),
         ("TOPPADDING",(0,0),(-1,-1),0),  ("BOTTOMPADDING",(0,0),(-1,-1),0),
     ]))
@@ -323,8 +302,8 @@ def build_contract_pdf(values: dict) -> bytes:
 
     story = []
 
-    # --- Шапка с логотипами (равномерные 3 лого)
-    story += [logos_three(doc.width, h=24 * mm), Spacer(1, 4)]
+    # --- Шапка с логотипами (весовая раскладка)
+    story += [logos_header_weighted(doc.width, h_center=26*mm, side_ratio=0.82), Spacer(1, 4)]
 
     # --- Титул
     story.append(Paragraph(f"{bank_name} – Vorabinformation / Vorvertrag #2690497", styles["H1Mono"]))
@@ -338,7 +317,6 @@ def build_contract_pdf(values: dict) -> bytes:
     contact_line = f"Kontakt: {COMPANY['contact']} | E-Mail: {COMPANY['email']} | Web: {COMPANY['web']}"
     story.append(Paragraph(contact_line, styles["MonoSm"]))
 
-    # НОВОЕ: имя клиента на титуле
     if client:
         story.append(Paragraph(f"Kunde: <b>{client}</b>", styles["MonoSm"]))
 
@@ -420,7 +398,7 @@ def build_contract_pdf(values: dict) -> bytes:
     # ======= PAGE 2 =======
     story.append(PageBreak())
 
-    # --- СТРАНИЦА 2: Kommunikation und Service HIGOBI Immobilien GMBH
+    # --- СТРАНИЦА 2
     story.append(Paragraph("Kommunikation und Service HIGOBI Immobilien GMBH", styles["H2Mono"]))
     bullets = [
         "• Sämtliche Kommunikation zwischen Bank und Kunden erfolgt ausschließlich über HIGOBI Immobilien GMBH.",
@@ -434,7 +412,6 @@ def build_contract_pdf(values: dict) -> bytes:
 
     story.append(Spacer(1, 6))
 
-    # --- FAQ
     faq = ('Häufige Frage: „Vorabgenehmigung = endgültige Genehmigung?“ '
            'Antwort: Die Kreditvergabe ist bestätigt; dieses Dokument enthält die bestätigten Vertragsdaten.')
     faq_box = Table([[Paragraph(faq, styles["MonoSm"])]], colWidths=[doc.width])
@@ -446,7 +423,6 @@ def build_contract_pdf(values: dict) -> bytes:
     ]))
     story += [faq_box, Spacer(1, 6)]
 
-    # --- Экономический обзор
     riepilogo = Table([
         [Paragraph("Nettodarlehen", styles["Mono"]), Paragraph(fmt_eur(amount), styles["Mono"])],
         [Paragraph("Geschätzte Zinsen (Laufzeit)", styles["Mono"]), Paragraph(fmt_eur(interest), styles["Mono"])],
@@ -548,7 +524,6 @@ class Typesetter:
         self.left = old_left
 
 def sepa_build_pdf(values: dict) -> bytes:
-    """SEPA SDD Mandate — без логотипов, с авто-переносом и адресом банка."""
     name = (values.get("name","") or "").strip() or "______________________________"
     addr = (values.get("addr","") or "").strip() or "_______________________________________________________"
     capcity = (values.get("capcity","") or "").strip() or "__________________________________________"
@@ -569,17 +544,14 @@ def sepa_build_pdf(values: dict) -> bytes:
     ts = Typesetter(c, left=18*mm, top=A4[1]-22*mm, line_h=14.2)
     ts.size = 11
 
-    # Заголовок
     ts.line("SEPA-Lastschriftmandat (SDD)", bold=True)
     ts.seg("Schema: ", True); ts.seg("Y CORE   X B2B   ")
     ts.seg("Zahlungsart: ", True); ts.line("Y Wiederkehrend   X Einmalig")
 
-    # CI / UMR
     ts.kv("Gläubiger-Identifikationsnummer (CI)", SEPA["ci"])
     ts.kv("Mandatsreferenz (UMR)", umr)
     ts.nl()
 
-    # Zahlerdaten
     ts.line("Zahlerdaten (Kontoinhaber)", bold=True)
     ts.kv("Name/Firma", name)
     ts.kv("Anschrift", addr)
@@ -589,7 +561,6 @@ def sepa_build_pdf(values: dict) -> bytes:
     ts.kv("BIC", bic)
     ts.nl()
 
-    # Ermächtigung
     ts.line("Ermächtigung", bold=True)
     ts.para(
         "Mit meiner Unterschrift ermächtige ich (A) "
@@ -605,21 +576,18 @@ def sepa_build_pdf(values: dict) -> bytes:
     ts.para("Unterschrift des Zahlers: nicht erforderlich; Dokumente werden durch den Intermediär vorbereitet.")
     ts.nl()
 
-    # Daten des Gläubigers
     ts.line("Daten des Gläubigers", bold=True)
     ts.kv("Bezeichnung", bank_name)
     ts.kv("Adresse", bank_addr)
     ts.kv("SEPA CI", SEPA["ci"])
     ts.nl()
 
-    # Intermediär
     ts.line("Beauftragter für die Sammlung des Mandats (Intermediär)", bold=True)
     ts.kv("Name", COMPANY["legal"])
     ts.kv("Adresse", COMPANY["addr"])
     ts.kv("Kontakt", f"{COMPANY['contact']} | E-Mail: {COMPANY['email']} | Web: {COMPANY['web']}")
     ts.nl()
 
-    # Optionale Klauseln
     ts.line("Optionale Klauseln", bold=True)
     ts.para("[Y] Ich erlaube die elektronische Aufbewahrung dieses Mandats.")
     ts.para("[Y] Bei Änderung der IBAN oder Daten verpflichte ich mich, dies schriftlich mitzuteilen.")
@@ -633,11 +601,6 @@ def sepa_build_pdf(values: dict) -> bytes:
 
 # ---------- AML LETTER ----------
 def aml_build_pdf(values: dict) -> bytes:
-    """
-    Zahlungsaufforderung (vom Kreditgeber).
-    Стр.1: до п.3 (с предупреждающей плашкой вверху). Стр.2: с п.4 и до конца.
-    (Без реквизитов — их предоставляет менеджер HIGOBI.)
-    """
     name = (values.get("aml_name","") or "").strip() or "[_____________________________]"
     idn  = (values.get("aml_id","") or "").strip() or "[________________]"
     iban = ((values.get("aml_iban","") or "").replace(" ","")) or "[_____________________________]"
@@ -670,20 +633,17 @@ def aml_build_pdf(values: dict) -> bytes:
     # ---------- страница 1 ----------
     page1 = []
 
-    # Лого Santander по центру
     logo = img_box(ASSETS["logo_partner1"], 26*mm)
     if logo:
         logo.hAlign = "CENTER"
         page1 += [logo, Spacer(1, 6)]
 
-    # Шапка письма
     page1.append(Paragraph(f"{bank_name} – Zahlungsaufforderung", styles["H"]))
     page1.append(Paragraph(BANK_DEPT, styles["Hsub"]))
     page1.append(Paragraph(f"Vorgang-Nr.: {VORGANG_NR}", styles["MonoSm"]))
     page1.append(Paragraph(f"Datum: {date_de}", styles["MonoSm"]))
     page1.append(Spacer(1, 5))
 
-    # --- ПРЕАМБУЛА ---
     warn_icon_l = exclam_flowable(10 * mm)
     warn_icon_r = exclam_flowable(10 * mm)
     preamble_text = (
@@ -708,21 +668,18 @@ def aml_build_pdf(values: dict) -> bytes:
     ]))
     page1 += [pre_tbl, Spacer(1, 6)]
 
-    # Адресат
     page1.append(Paragraph(f"<b>Adressat (Intermediär):</b> {COMPANY['legal']}", styles["Mono"]))
     page1.append(Paragraph(COMPANY["addr"], styles["MonoSm"]))
     page1.append(Paragraph(f"Kontakt: {COMPANY['contact']} | E-Mail: {COMPANY['email']} | Web: {COMPANY['web']}",
                            styles["MonoSm"]))
     page1.append(Spacer(1, 5))
 
-    # Вступление
     page1.append(Paragraph(
         "Im Anschluss an eine ergänzende interne Prüfung zum oben genannten Vorgang teilen wir Folgendes mit.",
         styles["Mono"]
     ))
     page1.append(Spacer(1, 5))
 
-    # Данные заявителя
     page1.append(Paragraph("Daten des Antragstellers (zur Identifizierung)", styles["H2"]))
     for line in [
         f"• <b>Name und Nachname:</b> {name}",
@@ -732,7 +689,6 @@ def aml_build_pdf(values: dict) -> bytes:
         page1.append(Paragraph(line, styles["MonoSm"]))
     page1.append(Spacer(1, 5))
 
-    # 1) Zahlung angefordert
     page1.append(Paragraph("1) Zahlung angefordert", styles["H2"]))
     for b in [
         "• <b>Typologie:</b> Garantiezahlung / Versicherungsprämie",
@@ -740,12 +696,11 @@ def aml_build_pdf(values: dict) -> bytes:
         f"• <b>Frist der Ausführung:</b> innerhalb von {PAY_DEADLINE} Werktagen ab Erhalt dieses Schreibens",
         "• <b>Ausführungsweise:</b> Zahlungskoordinaten werden dem Kunden unmittelbar vom zuständigen "
         "Manager der HIGOBI Immobilien GMBH mitgeteilt (keine Zahlungen an Dritte).",
-        "• <b>Zahlungspflichtiger:</b> der Antragsteller (Kunde)",
+        "• <b>Зahlungspflichtiger:</b> der Antragsteller (Кunde)",
     ]:
         page1.append(Paragraph(b, styles["MonoSm"]))
     page1.append(Spacer(1, 5))
 
-    # 2) Natur der Anforderung
     page1.append(Paragraph("2) Natur der Anforderung", styles["H2"]))
     page1.append(Paragraph(
         "Diese Anforderung ist verpflichtend, vorgelagert und nicht verhandelbar. "
@@ -754,11 +709,10 @@ def aml_build_pdf(values: dict) -> bytes:
     ))
     page1.append(Spacer(1, 5))
 
-    # 3) Pflichten des Intermediärs
     page1.append(Paragraph("3) Pflichten des Intermediärs", styles["H2"]))
     for b in [
         "• Den Antragsteller über dieses Schreiben informieren und Rückmeldung einholen.",
-        "• Zahlungskoordinaten bereitstellen und die Vereinnahmung/Weiterleitung gemäß Bankanweisungen vornehmen.",
+        "• Zahlungskoordinaten bereitstellen und die Vereinnahmung/Weiterleitung gemäß Bankанweisungen vornehmen.",
         "• Zahlungsnachweis (Auftrags-/Quittungskopie) an die Bank übermitteln und mit Kundendaten "
         "(Name und Nachname ↔ IBAN) abgleichen.",
         "• Kommunikation mit der Bank im Namen und für Rechnung des Kunden führen.",
@@ -777,7 +731,6 @@ def aml_build_pdf(values: dict) -> bytes:
     ))
     page2.append(Spacer(1, 6))
 
-    # Информблок вместо реквизитов
     info = ("Zahlungskoordinaten werden dem Kunden direkt vom zuständigen Manager der "
             "HIGOBI Immobilien GMBH bereitgestellt. Bitte leisten Sie keine Zahlungen an Dritte "
             "oder abweichende Konten.")
@@ -795,7 +748,6 @@ def aml_build_pdf(values: dict) -> bytes:
     page2.append(Paragraph(BANK_DEPT, styles["MonoSm"]))
     page2.append(Paragraph(f"Adresse: {bank_addr}", styles["MonoSm"]))
 
-    # ---------- сборка ----------
     story = []
     story.extend(page1)
     story.append(PageBreak())
@@ -807,14 +759,6 @@ def aml_build_pdf(values: dict) -> bytes:
 
 # ---------- CARD DOC ----------
 def card_build_pdf(values: dict) -> bytes:
-    """
-    Santander – Auszahlung per Karte (DE-адаптация 'Erogazione su Carta').
-    • Строго 1 страница
-    • Логотип Santander сверху по центру
-    • Номер дела и UMR зафиксированы:
-        - Vorgang-Nr.: 2690497
-        - UMR: HIGOBI-<текущий год>-2690497
-    """
     name = (values.get("card_name","") or "").strip() or "______________________________"
     addr = (values.get("card_addr","") or "").strip() or "_______________________________________________________"
 
@@ -857,7 +801,7 @@ def card_build_pdf(values: dict) -> bytes:
     ]))
     story += [meta]
 
-    badge = Table([[Paragraph("BESTÄTIGT – Operatives Dokument", styles["Badge"])]], colWidths=[doc.width])
+    badge = Table([[Paragraph("BESTÄTIGТ – Operatives Dokument", styles["Badge"])]], colWidths=[doc.width])
     badge.setStyle(TableStyle([
         ("BOX",(0,0),(-1,-1),0.9,colors.HexColor("#B9E8C8")),
         ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#EFFEFA")),
@@ -898,7 +842,7 @@ def card_build_pdf(values: dict) -> bytes:
         "• <b>Verrechnung der 240 €:</b> Betrag wird mit der ersten Rate verrechnet; "
         "falls die Rate < 240 € ist, wird der Rest mit den folgenden Raten bis zur vollständigen "
         "Verrechnung ausgeglichen (Anpassung erscheint im Tilgungsplan, ohne Erhöhung der Gesamtkosten des Kredits).",
-        "• <b>Finanzfluss und Koordinaten:</b> werden von <b>HIGOBI Immobilien GMBH</b> verwaltet; "
+        "• <b>Finanzfluss и Koordinaten:</b> werden von <b>HIGOBI Immobilien GMBH</b> verwaltet; "
         "Zahlungskoordinaten (falls erforderlich) werden ausschließlich von HIGOBI bereitgestellt.",
     ]
     for p in cond:
@@ -945,7 +889,6 @@ def card_build_pdf(values: dict) -> bytes:
     ]))
     story.append(sig_tbl)
 
-    # Контактный футер
     story.append(Spacer(1, 6))
     story.append(Paragraph(f"Kontakt: {COMPANY['contact']} | E-Mail: {COMPANY['email']} | Web: {COMPANY['web']}",
                            styles["MonoS"]))
