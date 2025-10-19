@@ -147,17 +147,20 @@ def monthly_payment(principal: float, tan_percent: float, months: int) -> float:
     if r == 0: return principal / months
     return principal * (r / (1 - (1 + r) ** (-months)))
 
-def img_box(path: str, max_h: float) -> Image | None:
+def img_box(path: str, max_h: float, max_w: float | None = None) -> Image | None:
     if not os.path.exists(path):
         log.warning("IMAGE NOT FOUND: %s", os.path.abspath(path)); return None
     try:
         ir = ImageReader(path); iw, ih = ir.getSize()
-        scale = max_h / float(ih)
+        # масштабируем так, чтобы вписаться и по высоте, и по ширине (если задана)
+        scale_h = max_h / float(ih)
+        scale_w = (max_w / float(iw)) if max_w else scale_h
+        scale = min(scale_h, scale_w)
         return Image(path, width=iw * scale, height=ih * scale)
     except Exception as e:
         log.error("IMAGE LOAD ERROR %s: %s", path, e); return None
 
-def logo_flatten_trim(path: str, max_h: float) -> Image | None:
+def logo_flatten_trim(path: str, max_h: float, max_w: float | None = None) -> Image | None:
     if not os.path.exists(path):
         log.warning("IMAGE NOT FOUND: %s", path); return None
     try:
@@ -176,7 +179,9 @@ def logo_flatten_trim(path: str, max_h: float) -> Image | None:
 
         ir = ImageReader(bio)
         iw, ih = ir.getSize()
-        scale = max_h / float(ih)
+        scale_h = max_h / float(ih)
+        scale_w = (max_w / float(iw)) if max_w else scale_h
+        scale = min(scale_h, scale_w)
         return Image(bio, width=iw * scale, height=ih * scale)
     except Exception as e:
         log.error("LOGO CLEAN ERROR %s: %s", path, e)
@@ -243,19 +248,19 @@ def build_contract_pdf(values: dict) -> bytes:
 
     story = []
 
-    # --- Шапка с логотипами
+    # --- Шапка с логотипами (3 равные колонки, центрирование, ограничение по ширине колонки)
+    col_w = doc.width / 3.0
     row_cells = [
-        img_box(ASSETS["logo_partner1"], 24*mm) or Spacer(1, 24*mm),
-        logo_flatten_trim(ASSETS["logo_partner2"], 24*mm),
-        img_box(ASSETS["logo_cred"],    24*mm) or Spacer(1, 24*mm),
+        logo_flatten_trim(ASSETS["logo_partner1"], 24 * mm, col_w * 0.9) or Spacer(1, 24 * mm),
+        logo_flatten_trim(ASSETS["logo_partner2"], 24 * mm, col_w * 0.9) or Spacer(1, 24 * mm),
+        logo_flatten_trim(ASSETS["logo_cred"], 24 * mm, col_w * 0.9) or Spacer(1, 24 * mm),
     ]
-    logos_tbl = Table([row_cells], colWidths=[doc.width*0.55, doc.width*0.22, doc.width*0.23])
+    logos_tbl = Table([row_cells], colWidths=[col_w, col_w, col_w], hAlign="CENTER")
     logos_tbl.setStyle(TableStyle([
-        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-        ("ALIGN",(0,0),(0,0),"LEFT"),
-        ("ALIGN",(1,0),(2,0),"RIGHT"),
-        ("LEFTPADDING",(0,0),(-1,-1),0), ("RIGHTPADDING",(0,0),(-1,-1),0),
-        ("TOPPADDING",(0,0),(-1,-1),0),  ("BOTTOMPADDING",(0,0),(-1,-1),0),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     story += [logos_tbl, Spacer(1, 4)]
 
