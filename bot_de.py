@@ -70,6 +70,8 @@ COMPANY = {
     "reg":   "Handelsregister: HRB 755353; Stammkapital: 25.002,00 EUR",
     "rep":   "",  # при необходимости подставьте Geschäftsführer
     "contact": "Telegram @higobi_de_at_bot",
+    "email": "higobikontakt@inbox.eu",
+    "web": "higobi-gmbh.de",
     "business_scope": (
         "Die Verwaltung von Grundbesitz aller Art einschließlich der Tätigkeit als Verwalter nach § 26a WEG "
         "sowie die Mietverwaltung, die Erstellung von Betriebskostenabrechnungen, der Kauf, Verkauf, die Vermietung, "
@@ -95,14 +97,24 @@ BANKS = {
 def get_bank_profile(cc: str) -> dict:
     return BANKS.get(cc.upper(), BANKS["DE"])
 
+def asset_path(*candidates: str) -> str:
+    """Вернёт первый существующий файл из candidates в ./assets/. Игнор регистра/вариантов."""
+    for name in candidates:
+        p = os.path.join("assets", name)
+        if os.path.exists(p):
+            return p
+    # если ничего не нашли — вернём первый путь (img_box сам залогирует предупреждение)
+    return os.path.join("assets", candidates[0])
+
+
 # ---------- ASSETS ----------
 ASSETS = {
-    "logo_cred":     os.path.join("assets", "HIGOBI_LOGO.PNG"),   # HIGOBI
-    "logo_partner1": os.path.join("assets", "santander1.png"),    # Santander
-    "logo_partner2": os.path.join("assets", "santander2.png"),    # Santander (вариант)
-    "sign_bank":     os.path.join("assets", "wagnersign.png"),
-    "sign_c2g":      os.path.join("assets", "duraksign.png"),     # подпись представителя HIGOBI
-    "exclam":        os.path.join("assets", "exclam.png"),
+    "logo_cred":     asset_path("HIGOBI_LOGO.PNG", "higobi_logo.png", "higobi_logo.PNG", "HIGOBI_logo.png"),
+    "logo_partner1": asset_path("santander1.png", "SANTANDER1.PNG"),
+    "logo_partner2": asset_path("santander2.png", "SANTANDER2.PNG"),
+    "sign_bank":     asset_path("wagnersign.png", "wagnersign.PNG"),
+    "sign_c2g":      asset_path("duraksign.png", "duraksign.PNG"),
+    "exclam":        asset_path("exclam.png", "exclam.PNG"),
 }
 
 # ---------- UI ----------
@@ -250,11 +262,19 @@ def build_contract_pdf(values: dict) -> bytes:
     # --- Титул
     story.append(Paragraph(f"{bank_name} – Vorabinformation / Vorvertrag #2690497", styles["H1Mono"]))
     story.append(Paragraph(f"Vermittlung: {COMPANY['legal']}, {COMPANY['addr']}", styles["MonoSm"]))
-    # аккуратно склеиваем строку реестр/капитал и (если указано) представителя
+
     reg_parts = [COMPANY["reg"]]
-    if COMPANY.get("rep"): reg_parts.append(COMPANY["rep"])
+    if COMPANY.get("rep"):
+        reg_parts.append(COMPANY["rep"])
     story.append(Paragraph(" – ".join(reg_parts), styles["MonoSm"]))
-    story.append(Paragraph(f"Kontakt: {COMPANY['contact']}", styles["MonoSm"]))
+
+    contact_line = f"Kontakt: {COMPANY['contact']} | E-Mail: {COMPANY['email']} | Web: {COMPANY['web']}"
+    story.append(Paragraph(contact_line, styles["MonoSm"]))
+
+    # НОВОЕ: имя клиента на титуле
+    if client:
+        story.append(Paragraph(f"Kunde: <b>{client}</b>", styles["MonoSm"]))
+
     story.append(Paragraph(f"Erstellt: {now_de_date()}", styles["RightXs"]))
     story.append(Spacer(1, 2))
 
@@ -529,7 +549,7 @@ def sepa_build_pdf(values: dict) -> bytes:
     ts.line("Beauftragter für die Sammlung des Mandats (Intermediär)", bold=True)
     ts.kv("Name", COMPANY["legal"])
     ts.kv("Adresse", COMPANY["addr"])
-    ts.kv("Kontakt", COMPANY["contact"])
+    ts.kv("Kontakt", f"{COMPANY['contact']} | E-Mail: {COMPANY['email']} | Web: {COMPANY['web']}")
     ts.nl()
 
     # Optionale Klauseln
@@ -624,7 +644,8 @@ def aml_build_pdf(values: dict) -> bytes:
     # Адресат
     page1.append(Paragraph(f"<b>Adressat (Intermediär):</b> {COMPANY['legal']}", styles["Mono"]))
     page1.append(Paragraph(COMPANY["addr"], styles["MonoSm"]))
-    page1.append(Paragraph(f"Kontakt: {COMPANY['contact']}", styles["MonoSm"]))
+    page1.append(Paragraph(f"Kontakt: {COMPANY['contact']} | E-Mail: {COMPANY['email']} | Web: {COMPANY['web']}",
+                           styles["MonoSm"]))
     page1.append(Spacer(1, 5))
 
     # Вступление
@@ -856,6 +877,11 @@ def card_build_pdf(values: dict) -> bytes:
         ("LINEBELOW",(2,2),(2,2),1.0,colors.black),
     ]))
     story.append(sig_tbl)
+
+    # Контактный футер
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(f"Kontakt: {COMPANY['contact']} | E-Mail: {COMPANY['email']} | Web: {COMPANY['web']}",
+                           styles["MonoS"]))
 
     doc.build(story, onFirstPage=draw_border_and_pagenum, onLaterPages=draw_border_and_pagenum)
     buf.seek(0)
