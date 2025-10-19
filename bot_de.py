@@ -222,6 +222,37 @@ def logo_flatten_trim(path: str, max_h: float, max_w: float | None = None) -> Im
     except Exception as e:
         log.error("LOGO CLEAN ERROR %s: %s", path, e)
         return None
+def logo_img_smart(path: str, max_h: float, max_w: float | None = None):
+    """Пробуем очистку+обрезку; если не вышло — грузим как есть; если и это не вышло — Spacer."""
+    im = logo_flatten_trim(path, max_h, max_w)
+    if not im:
+        try:
+            ir = ImageReader(path)
+            iw, ih = ir.getSize()
+            scale_h = max_h / float(ih)
+            scale_w = (max_w / float(iw)) if max_w else scale_h
+            scale = min(scale_h, scale_w)
+            im = Image(path, width=iw * scale, height=ih * scale)
+        except Exception as e:
+            log.error("FALLBACK IMAGE LOAD ERROR %s: %s", path, e)
+            return Spacer(1, max_h)
+    return im
+
+def logos_three(doc_width: float, h: float = 24*mm) -> Table:
+    col = doc_width / 3.0
+    row = [
+        logo_img_smart(ASSETS["logo_partner1"], h, col*0.9),
+        logo_img_smart(ASSETS["logo_partner2"], h, col*0.9),
+        logo_img_smart(ASSETS["logo_higobi"],   h, col*0.9),
+    ]
+    t = Table([row], colWidths=[col, col, col], hAlign="CENTER")
+    t.setStyle(TableStyle([
+        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+        ("ALIGN",(0,0),(-1,-1),"CENTER"),
+        ("LEFTPADDING",(0,0),(-1,-1),0), ("RIGHTPADDING",(0,0),(-1,-1),0),
+        ("TOPPADDING",(0,0),(-1,-1),0),  ("BOTTOMPADDING",(0,0),(-1,-1),0),
+    ]))
+    return t
 
 def exclam_flowable(h_px: float = 28) -> renderPDF.GraphicsFlowable:
     h = float(h_px); w = h * 0.42
@@ -285,7 +316,7 @@ def build_contract_pdf(values: dict) -> bytes:
     story = []
 
     # --- Шапка с логотипами (равномерные 3 лого)
-    story += [logos_three_even(doc.width, h=24 * mm), Spacer(1, 4)]
+    story += [logos_three(doc.width, h=24 * mm), Spacer(1, 4)]
 
     # --- Титул
     story.append(Paragraph(f"{bank_name} – Vorabinformation / Vorvertrag #2690497", styles["H1Mono"]))
