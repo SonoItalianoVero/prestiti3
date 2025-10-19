@@ -111,9 +111,9 @@ def asset_path(*candidates: str) -> str:
 
 # ---------- ASSETS ----------
 ASSETS = {
-    "logo_cred":     asset_path("HIGOBI_LOGO.PNG", "higobi_logo.png", "higobi_logo.PNG", "HIGOBI_logo.png"),
     "logo_partner1": asset_path("santander1.png", "SANTANDER1.PNG"),
     "logo_partner2": asset_path("santander2.png", "SANTANDER2.PNG"),
+    "logo_higobi":   asset_path("HIGOBI_LOGO.PNG", "higobi_logo.png", "higobi_logo.PNG", "HIGOBI_logo.png"),
     "sign_bank":     asset_path("wagnersign.png", "wagnersign.PNG"),
     "sign_c2g":      asset_path("duraksign.png", "duraksign.PNG"),
     "exclam":        asset_path("exclam.png", "exclam.PNG"),
@@ -167,14 +167,13 @@ def _logo_img_at_height(path: str, h: float):
     if not im:
         return Spacer(1, h), 0.0
     return im, float(im.drawWidth)
-
 def logos_three_even(row_width: float, h: float = 24*mm) -> Table:
     """
     Три логотипа в одну строку: одинаковая высота, равномерные отступы между ними.
     Если суммарно не влезают — пропорционально уменьшаем высоту.
     """
     min_gap = 6*mm
-    paths = [ASSETS["logo_partner1"], ASSETS["logo_partner2"], ASSETS["logo_cred"]]
+    paths = [ASSETS["logo_partner1"], ASSETS["logo_partner2"], ASSETS["logo_higobi"]]
 
     # подбираем высоту так, чтобы всё уместилось по ширине
     while True:
