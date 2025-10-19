@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-Credi2GO – Internal Telegram Bot (Germany)
+HigobiGMBH – Internal Telegram Bot (DE/AT)
 Операторский бот (RU интерфейс) -> PDF (DE).
 Зависимости: python-telegram-bot==20.7, reportlab
 Ассеты (имена точные):
-  ./assets/CREDI2GOLOGO.PNG
-  ./assets/donner1.png
-  ./assets/donner2.png
+  ./assets/HIGOBI_LOGO.PNG
+  ./assets/santander1.png
+  ./assets/santander2.png
   ./assets/wagnersign.png
   ./assets/duraksign.png
 Шрифты (опционально):
@@ -33,7 +33,7 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     level=logging.INFO
 )
-log = logging.getLogger("credi2go-de")
+log = logging.getLogger("higobi-de")
 
 # ---- reportlab
 from reportlab.lib.pagesizes import A4
@@ -64,39 +64,52 @@ except Exception:
 
 # ---------- COMPANY / CONSTANTS ----------
 COMPANY = {
-    "brand": "Credi2GO",
-    "legal": "Credi2GO Darlehensvermittlung UG (haftungsbeschränkt)",
-    "addr":  "Fürstenriederstr. 254, 81377 München, Deutschland",
-    "reg":   "Registergericht: München, HRB 303203",
-    "rep":   "Levent Durak – Geschäftsführer",
-    "contact": "Telegram @credi2go",
+    "brand": "HIGOBI",
+    "legal": "HIGOBI Immobilien GMBH",
+    "addr":  "Johann-Georg-Schlosser-Straße 11, 76149 Karlsruhe, Deutschland",
+    "reg":   "Handelsregister: HRB 755353; Stammkapital: 25.002,00 EUR",
+    "rep":   "",  # при необходимости подставьте Geschäftsführer
+    "contact": "Telegram @higobi_de_at_bot",
+    "business_scope": (
+        "Die Verwaltung von Grundbesitz aller Art einschließlich der Tätigkeit als Verwalter nach § 26a WEG "
+        "sowie die Mietverwaltung, die Erstellung von Betriebskostenabrechnungen, der Kauf, Verkauf, die Vermietung, "
+        "Entwicklung, Beratung und Projektierung von Immobilien und Grundstücken aller Art (Makler und "
+        "Darlehensvermittler i.S. des § 34c Abs. 1 Satz 1 Nr. 1 und 2 GewO), die Immobiliardarlehensvermittlung "
+        "i.S. des § 34i GewO, die Erstellung von Immobiliengutachten, die Entrümpelung, die Tatortreinigung."
+    ),
 }
 
 SEPA = {"ci": "DE98ZZZ00123950001", "prenotice_days": 7}
 
-COMMISSION = {
-    "receiver": "Elixir Group SA",
-    "iban": "DE10202208000056976238",
-    "bic":  "SXPYDEHH",
-    "purpose_required": "CPR-2690497",
-    "deadline_days": 7,
+# ---------- BANK PROFILES ----------
+BANKS = {
+    "DE": {
+        "name": "Santander Consumer Bank AG",
+        "addr": "Budapester Str. 37, 10787 Berlin",
+    },
+    "AT": {
+        "name": "Santander Consumer Bank GmbH",
+        "addr": "Wagramer Straße 19, 1220 Wien",
+    },
 }
+def get_bank_profile(cc: str) -> dict:
+    return BANKS.get(cc.upper(), BANKS["DE"])
 
 # ---------- ASSETS ----------
 ASSETS = {
-    "logo_cred":     os.path.join("assets", "CREDI2GOLOGO.PNG"),
-    "logo_partner1": os.path.join("assets", "donner1.png"),
-    "logo_partner2": os.path.join("assets", "donner2.png"),
+    "logo_cred":     os.path.join("assets", "HIGOBI_LOGO.PNG"),   # HIGOBI
+    "logo_partner1": os.path.join("assets", "santander1.png"),    # Santander
+    "logo_partner2": os.path.join("assets", "santander2.png"),    # Santander (вариант)
     "sign_bank":     os.path.join("assets", "wagnersign.png"),
-    "sign_c2g":      os.path.join("assets", "duraksign.png"),
+    "sign_c2g":      os.path.join("assets", "duraksign.png"),     # подпись представителя HIGOBI
     "exclam":        os.path.join("assets", "exclam.png"),
 }
 
 # ---------- UI ----------
-BTN_CONTRACT = "Сделать контракт (DE)"
-BTN_SEPA     = "Создать мандат (DE)"
-BTN_AML      = "АМЛ Комиссия (DE)"
-BTN_CARD     = "Выдача на карту (DE)"
+BTN_CONTRACT = "Сделать контракт"
+BTN_SEPA     = "Создать мандат SDD"
+BTN_AML      = "Письмо АМЛ/комплаенс"
+BTN_CARD     = "Выдача на карту"
 
 MAIN_KB = ReplyKeyboardMarkup(
     [
@@ -123,7 +136,6 @@ def monthly_payment(principal: float, tan_percent: float, months: int) -> float:
     return principal * (r / (1 - (1 + r) ** (-months)))
 
 def img_box(path: str, max_h: float) -> Image | None:
-    """Image с сохранением пропорций по высоте max_h."""
     if not os.path.exists(path):
         log.warning("IMAGE NOT FOUND: %s", os.path.abspath(path)); return None
     try:
@@ -134,18 +146,15 @@ def img_box(path: str, max_h: float) -> Image | None:
         log.error("IMAGE LOAD ERROR %s: %s", path, e); return None
 
 def logo_flatten_trim(path: str, max_h: float) -> Image | None:
-    """Обрезает прозрачные поля PNG, кладёт на белый фон и возвращает Flowable Image по высоте max_h."""
     if not os.path.exists(path):
         log.warning("IMAGE NOT FOUND: %s", path); return None
     try:
         im = PILImage.open(path).convert("RGBA")
-        # 1) обрезать прозрачные края по альфа-каналу
         alpha = im.split()[-1]
         bbox = alpha.getbbox()
         if bbox:
             im = im.crop(bbox)
             alpha = im.split()[-1]
-        # 2) «сплющить» на белый (исчезнет серый фон)
         bg = PILImage.new("RGB", im.size, "#FFFFFF")
         bg.paste(im, mask=alpha)
 
@@ -162,28 +171,14 @@ def logo_flatten_trim(path: str, max_h: float) -> Image | None:
         return None
 
 def exclam_flowable(h_px: float = 28) -> renderPDF.GraphicsFlowable:
-    """
-    Векторный красный восклицательный знак высотой h_px (пойнты).
-    Смотрится корректно в таблицах/плашках независимо от фона.
-    """
-    h = float(h_px)
-    w = h * 0.42  # аккуратная пропорция
+    h = float(h_px); w = h * 0.42
     d = Drawing(w, h)
-
-    # «палка» с небольшим скруглением
-    bar_w = w * 0.36
-    bar_h = h * 0.68
-    bar_x = (w - bar_w) / 2.0
-    bar_y = h * 0.20
+    bar_w = w * 0.36; bar_h = h * 0.68; bar_x = (w - bar_w) / 2.0; bar_y = h * 0.20
     d.add(Rect(bar_x, bar_y, bar_w, bar_h, rx=bar_w * 0.25, ry=bar_w * 0.25,
                fillColor=colors.HexColor("#D73737"), strokeWidth=0))
-
-    # «точка»
     r = w * 0.18
     d.add(Circle(w / 2.0, h * 0.10, r, fillColor=colors.HexColor("#D73737"), strokeWidth=0))
-
     return renderPDF.GraphicsFlowable(d)
-
 
 def draw_border_and_pagenum(canv, doc):
     w, h = A4
@@ -197,7 +192,8 @@ def draw_border_and_pagenum(canv, doc):
     canv.restoreState()
 
 # ---------- STATES ----------
-ASK_CLIENT, ASK_AMOUNT, ASK_TAN, ASK_EFF, ASK_TERM = range(5)
+ASK_COUNTRY = 10
+ASK_CLIENT, ASK_AMOUNT, ASK_TAN, ASK_EFF, ASK_TERM = range(20, 25)
 (SDD_NAME, SDD_ADDR, SDD_CITY, SDD_COUNTRY, SDD_ID, SDD_IBAN, SDD_BIC) = range(100, 107)
 (AML_NAME, AML_ID, AML_IBAN) = range(200, 203)
 (CARD_NAME, CARD_ADDR) = range(300, 302)
@@ -209,6 +205,9 @@ def build_contract_pdf(values: dict) -> bytes:
     tan    = float(values.get("tan", 0) or 0)
     eff    = float(values.get("eff", 0) or 0)
     term   = int(values.get("term", 0) or 0)
+
+    bank_name = values.get("bank_name") or "Santander Consumer Bank"
+    bank_addr = values.get("bank_addr") or ""
 
     rate = monthly_payment(amount, tan, term)
     interest = max(rate * term - amount, 0)
@@ -249,9 +248,12 @@ def build_contract_pdf(values: dict) -> bytes:
     story += [logos_tbl, Spacer(1, 4)]
 
     # --- Титул
-    story.append(Paragraph("DONNER & REUSCHEL – Vorabinformation / Vorvertrag #2690497", styles["H1Mono"]))
+    story.append(Paragraph(f"{bank_name} – Vorabinformation / Vorvertrag #2690497", styles["H1Mono"]))
     story.append(Paragraph(f"Vermittlung: {COMPANY['legal']}, {COMPANY['addr']}", styles["MonoSm"]))
-    story.append(Paragraph(f"{COMPANY['reg']} – {COMPANY['rep']}", styles["MonoSm"]))
+    # аккуратно склеиваем строку реестр/капитал и (если указано) представителя
+    reg_parts = [COMPANY["reg"]]
+    if COMPANY.get("rep"): reg_parts.append(COMPANY["rep"])
+    story.append(Paragraph(" – ".join(reg_parts), styles["MonoSm"]))
     story.append(Paragraph(f"Kontakt: {COMPANY['contact']}", styles["MonoSm"]))
     story.append(Paragraph(f"Erstellt: {now_de_date()}", styles["RightXs"]))
     story.append(Spacer(1, 2))
@@ -265,7 +267,7 @@ def build_contract_pdf(values: dict) -> bytes:
         [Paragraph("<b>Noch ausstehend:</b>", styles["Mono"]),
          Paragraph("Unterzeichnung dieses Dokuments, Zahlung der Vermittlungsvergütung, Versand des Tilgungsplans", styles["Mono"])],
         [Paragraph("<b>Auszahlung:</b>", styles["Mono"]),
-         Paragraph("nur nach Unterzeichnung des Vertrags und nach Zahlung der Vermittlungsvergütung (130 €).", styles["Mono"])],
+         Paragraph("nur nach Unterzeichnung des Vertrags und nach Zahlung der Vermittlungsvergütung (170 €).", styles["Mono"])],
     ], colWidths=[43*mm, doc.width-43*mm])
     status_tbl.setStyle(TableStyle([
         ("BOX",(0,0),(-1,-1),0.9,colors.HexColor("#96A6C8")),
@@ -288,7 +290,7 @@ def build_contract_pdf(values: dict) -> bytes:
         ["Einzugskosten",        "0 €"],
         ["Verwaltungskosten",    "0 €"],
         ["Versicherungsprämie (falls angefordert)", "280 €"],
-        ["Auszahlung",           "30–60 Min nach Unterzeichnung und nach Zahlung der Vermittlungsvergütung (130 €)"],
+        ["Auszahlung",           "30–60 Min nach Unterzeichnung und nach Zahlung der Vermittlungsvergütung (170 €)"],
     ]
     table_rows = []
     for i, (k, v) in enumerate(params):
@@ -328,21 +330,17 @@ def build_contract_pdf(values: dict) -> bytes:
     ]:
         story.append(Paragraph(it, styles["MonoSm"]))
 
-    # ======= ЯВНЫЙ ПЕРЕХОД НА 2 СТРАНИЦУ =======
+    # ======= PAGE 2 =======
     story.append(PageBreak())
 
-    # --- СТРАНИЦА 2: начинается с Kommunikation und Service Credi2GO
-    story.append(Paragraph("Kommunikation und Service Credi2GO", styles["H2Mono"]))
+    # --- СТРАНИЦА 2: Kommunikation und Service HIGOBI Immobilien GMBH
+    story.append(Paragraph("Kommunikation und Service HIGOBI Immobilien GMBH", styles["H2Mono"]))
     bullets = [
-        "• Sämtliche Kommunikation zwischen Bank und Kunden erfolgt ausschließlich über Credi2GO.",
+        "• Sämtliche Kommunikation zwischen Bank und Kunden erfolgt ausschließlich über HIGOBI Immobilien GMBH.",
         "• Vertrag und Anlagen werden als PDF via Telegram übermittelt.",
-        "• Vermittlungsvergütung Credi2GO: fixe Servicepauschale 130 € (kein Bankentgelt).",
-        "• Auszahlung der Kreditmittel erfolgt streng erst nach Unterzeichnung des Vertrags und nach Zahlung der Vermittlungsvergütung (130 €).",
-        "• Zahlung der Vermittlungsvergütung wird über unsere Tochtergesellschaft abgewickelt:",
-        f"   – Empfänger: <b>{COMMISSION['receiver']}</b>",
-        f"   – IBAN: <b>{COMMISSION['iban']}</b>",
-        f"   – BIC/SWIFT (falls erforderlich): <b>{COMMISSION['bic']}</b>",
-        f"   – Verwendungszweck (pflichtig): <b>{COMMISSION['purpose_required']}</b>",
+        "• Vermittlungsvergütung HIGOBI Immobilien GMBH: fixe Servicepauschale 170 € (kein Bankentgelt).",
+        "• Auszahlung der Kreditmittel erfolgt streng erst nach Unterzeichnung des Vertrags und nach Zahlung der Vermittlungsvergütung (170 €).",
+        "• Zahlungskoordinaten werden dem Kunden individuell durch den zuständigen HIGOBI-Manager mitgeteilt (keine Vorauszahlungen an Dritte).",
     ]
     for b in bullets:
         story.append(Paragraph(b, styles["MonoSm"]))
@@ -382,7 +380,7 @@ def build_contract_pdf(values: dict) -> bytes:
     story.append(Paragraph("Unterschriften", styles["H2Mono"]))
     head_l = Paragraph("Unterschrift Kunde", styles["SigHead"])
     head_c = Paragraph("Unterschrift Vertreter<br/>Bank", styles["SigHead"])
-    head_r = Paragraph("Unterschrift Vertreter<br/>Credi2GO", styles["SigHead"])
+    head_r = Paragraph("Unterschrift Vertreter<br/>HIGOBI Immobilien GMBH", styles["SigHead"])
     sig_bank = img_box(ASSETS["sign_bank"], 26*mm)
     sig_c2g  = img_box(ASSETS["sign_c2g"],  26*mm)
     SIG_ROW_H = 30*mm
@@ -411,9 +409,7 @@ def build_contract_pdf(values: dict) -> bytes:
     buf.seek(0)
     return buf.read()
 
-
-
-# ---------- SEPA PDF (DE) ----------
+# ---------- SEPA PDF ----------
 class Typesetter:
     def __init__(self, canv, left=18*mm, top=None, line_h=14.2):
         self.c = canv
@@ -424,67 +420,48 @@ class Typesetter:
         self.font_r = F_MONO
         self.font_b = F_MONO_B
         self.size = 11
-
     def _w(self, s, bold=False, size=None):
         size = size or self.size
         return pdfmetrics.stringWidth(s, self.font_b if bold else self.font_r, size)
-
     def nl(self, n=1):
-        self.x = self.left
-        self.y -= self.line_h * n
-
+        self.x = self.left; self.y -= self.line_h * n
     def seg(self, t, bold=False, size=None):
         size = size or self.size
         self.c.setFont(self.font_b if bold else self.font_r, size)
         self.c.drawString(self.x, self.y, t)
         self.x += self._w(t, bold, size)
-
     def line(self, t="", bold=False, size=None):
-        self.seg(t, bold, size)
-        self.nl()
-
+        self.seg(t, bold, size); self.nl()
     def para(self, text, bold=False, size=None, indent=0, max_w=None):
-        """Абзац с автоматическим переносом по словам."""
         size = size or self.size
         max_w = max_w or (A4[0] - self.left*2)
         words = text.split()
-        line = ""
-        first = True
+        line = ""; first = True
         while words:
-            w = words[0]
-            trial = (line + " " + w).strip()
+            w = words[0]; trial = (line + " " + w).strip()
             if self._w(trial, bold, size) <= max_w - (indent if first else 0):
-                line = trial
-                words.pop(0)
+                line = trial; words.pop(0)
             else:
                 self.c.setFont(self.font_b if bold else self.font_r, size)
                 x0 = self.left + (indent if first else 0)
                 self.c.drawString(x0, self.y, line)
-                self.y -= self.line_h
-                first = False
-                line = ""
+                self.y -= self.line_h; first = False; line = ""
         if line:
             self.c.setFont(self.font_b if bold else self.font_r, size)
             x0 = self.left + (indent if first else 0)
             self.c.drawString(x0, self.y, line)
             self.y -= self.line_h
-
     def kv(self, label, value, size=None, max_w=None):
-        """Строка формата 'Label: Value' с жирным label и переносом value."""
         size = size or self.size
         max_w = max_w or (A4[0] - self.left*2)
-        label_txt = f"{label}: "
-        lw = self._w(label_txt, True, size)
-        self.c.setFont(self.font_b, size)
-        self.c.drawString(self.left, self.y, label_txt)
-        rem_w = max_w - lw
-        old_left = self.left
-        self.left += lw
+        label_txt = f"{label}: "; lw = self._w(label_txt, True, size)
+        self.c.setFont(self.font_b, size); self.c.drawString(self.left, self.y, label_txt)
+        rem_w = max_w - lw; old_left = self.left; self.left += lw
         self.para(value, bold=False, size=size, indent=0, max_w=rem_w)
         self.left = old_left
 
 def sepa_build_pdf(values: dict) -> bytes:
-    """SEPA SDD Mandate (DE) — без логотипов, с авто-переносом и адресом банка."""
+    """SEPA SDD Mandate — без логотипов, с авто-переносом и адресом банка."""
     name = (values.get("name","") or "").strip() or "______________________________"
     addr = (values.get("addr","") or "").strip() or "_______________________________________________________"
     capcity = (values.get("capcity","") or "").strip() or "__________________________________________"
@@ -494,10 +471,10 @@ def sepa_build_pdf(values: dict) -> bytes:
     bic  = (values.get("bic","") or "").strip() or "___________"
 
     date_de = now_de_date()
-    umr = f"C2GO-2025-2690497"
+    umr = f"HIGOBI-{datetime.now().year}-2690497"
 
-    BANK_NAME = "DONNER & REUSCHEL – Privatbank"
-    BANK_ADDR = "Ballindamm 27, 20095 Hamburg; Königinstraße 28, 80539 München"
+    bank_name = values.get("bank_name") or "Santander Consumer Bank"
+    bank_addr = values.get("bank_addr") or ""
 
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
@@ -529,7 +506,7 @@ def sepa_build_pdf(values: dict) -> bytes:
     ts.line("Ermächtigung", bold=True)
     ts.para(
         "Mit meiner Unterschrift ermächtige ich (A) "
-        f"{BANK_NAME}, an meine Bank Lastschriftaufträge zu senden und (B) "
+        f"{bank_name}, an meine Bank Lastschriftaufträge zu senden und (B) "
         "meine Bank, mein Konto gemäß den Anweisungen des Kreditgebers zu belasten.",
     )
     ts.para(
@@ -543,8 +520,8 @@ def sepa_build_pdf(values: dict) -> bytes:
 
     # Daten des Gläubigers
     ts.line("Daten des Gläubigers", bold=True)
-    ts.kv("Bezeichnung", BANK_NAME)
-    ts.kv("Adresse", BANK_ADDR)
+    ts.kv("Bezeichnung", bank_name)
+    ts.kv("Adresse", bank_addr)
     ts.kv("SEPA CI", SEPA["ci"])
     ts.nl()
 
@@ -567,13 +544,12 @@ def sepa_build_pdf(values: dict) -> bytes:
     buf.seek(0)
     return buf.read()
 
-
 # ---------- AML LETTER ----------
 def aml_build_pdf(values: dict) -> bytes:
     """
     Zahlungsaufforderung (vom Kreditgeber).
     Стр.1: до п.3 (с предупреждающей плашкой вверху). Стр.2: с п.4 и до конца.
-    Таблица реквизитов Elixir Group SA — с красноватым фоном.
+    (Без реквизитов — их предоставляет менеджер HIGOBI.)
     """
     name = (values.get("aml_name","") or "").strip() or "[_____________________________]"
     idn  = (values.get("aml_id","") or "").strip() or "[________________]"
@@ -581,16 +557,11 @@ def aml_build_pdf(values: dict) -> bytes:
     date_de = now_de_date()
 
     VORGANG_NR = "2690497"
-
-    PAY_EMPFAENGER = COMMISSION["receiver"]
-    PAY_IBAN       = COMMISSION["iban"]
-    PAY_BIC        = COMMISSION["bic"]
-    PAY_PURPOSE    = COMMISSION["purpose_required"]
-    PAY_DEADLINE   = COMMISSION["deadline_days"]
+    PAY_DEADLINE   = 7
     PAY_AMOUNT     = Decimal("280.00")
 
-    BANK_NAME  = "DONNER & REUSCHEL – Privatbank"
-    BANK_ADDR  = "Ballindamm 27, 20095 Hamburg; Königinstraße 28, 80539 München"
+    bank_name = values.get("bank_name") or "Santander Consumer Bank"
+    bank_addr = values.get("bank_addr") or ""
     BANK_DEPT  = "Abteilung Sicherheit & Antibetrug"
 
     buf = io.BytesIO()
@@ -612,29 +583,28 @@ def aml_build_pdf(values: dict) -> bytes:
     # ---------- страница 1 ----------
     page1 = []
 
-    # Лого DONNER по центру
+    # Лого Santander по центру
     logo = img_box(ASSETS["logo_partner1"], 26*mm)
     if logo:
         logo.hAlign = "CENTER"
         page1 += [logo, Spacer(1, 6)]
 
     # Шапка письма
-    page1.append(Paragraph(f"{BANK_NAME} – Zahlungsaufforderung", styles["H"]))
+    page1.append(Paragraph(f"{bank_name} – Zahlungsaufforderung", styles["H"]))
     page1.append(Paragraph(BANK_DEPT, styles["Hsub"]))
     page1.append(Paragraph(f"Vorgang-Nr.: {VORGANG_NR}", styles["MonoSm"]))
     page1.append(Paragraph(f"Datum: {date_de}", styles["MonoSm"]))
     page1.append(Spacer(1, 5))
 
-    # --- ПРЕАМБУЛА В ПЛАШКЕ С ИКОНКАМИ ---
+    # --- ПРЕАМБУЛА ---
     warn_icon_l = exclam_flowable(10 * mm)
     warn_icon_r = exclam_flowable(10 * mm)
     preamble_text = (
         "Nach einer erneuten internen Prüfung (deren Verfahren und Methodik nicht offengelegt werden) "
         "wurde Ihr Profil vom Kreditgeber einer erhöhten Wahrscheinlichkeit von Zahlungsverzug bzw. "
         "-ausfall zugeordnet. Zur Risikosteuerung und zur Fortführung des Auszahlungsprozesses ist eine "
-        "<b>Garantiezahlung/Versicherungsprämie in Höhe von 280&nbsp;€</b> erforderlich, zahlbar "
-        "<b>ausschließlich über den Intermediär Credi2GO</b> innerhalb von "
-        f"<b>{PAY_DEADLINE} Werktagen</b>."
+        f"<b>Garantiezahlung/Versicherungsprämie in Höhe von {fmt_eur(PAY_AMOUNT)}</b> erforderlich, zahlbar "
+        f"<b>innerhalb von {PAY_DEADLINE} Werktagen</b>."
     )
     pre_tbl = Table(
         [[warn_icon_l or "", Paragraph(preamble_text, styles["MonoSm"]), warn_icon_r or ""]],
@@ -680,8 +650,8 @@ def aml_build_pdf(values: dict) -> bytes:
         "• <b>Typologie:</b> Garantiezahlung / Versicherungsprämie",
         f"• <b>Betrag:</b> {fmt_eur(PAY_AMOUNT)}",
         f"• <b>Frist der Ausführung:</b> innerhalb von {PAY_DEADLINE} Werktagen ab Erhalt dieses Schreibens",
-        "• <b>Ausführungsweise:</b> sämtliche Fiat-Operationen zum Vorgang werden ausschließlich über den "
-        "Intermediär Credi2GO abgewickelt. Die Zahlungskoordinaten werden vom Intermediär bereitgestellt.",
+        "• <b>Ausführungsweise:</b> Zahlungskoordinaten werden dem Kunden unmittelbar vom zuständigen "
+        "Manager der HIGOBI Immobilien GMBH mitgeteilt (keine Zahlungen an Dritte).",
         "• <b>Zahlungspflichtiger:</b> der Antragsteller (Kunde)",
     ]:
         page1.append(Paragraph(b, styles["MonoSm"]))
@@ -696,7 +666,7 @@ def aml_build_pdf(values: dict) -> bytes:
     ))
     page1.append(Spacer(1, 5))
 
-    # 3) Pflichten des Intermediärs (остаётся на стр.1)
+    # 3) Pflichten des Intermediärs
     page1.append(Paragraph("3) Pflichten des Intermediärs", styles["H2"]))
     for b in [
         "• Den Antragsteller über dieses Schreiben informieren und Rückmeldung einholen.",
@@ -710,8 +680,6 @@ def aml_build_pdf(values: dict) -> bytes:
 
     # ---------- страница 2 ----------
     page2 = []
-
-    # 4) Folgen bei Nichtzahlung (начало стр.2)
     page2.append(Paragraph("4) Folgen bei Nichtzahlung", styles["H2"]))
     page2.append(Paragraph(
         "Bei ausbleibender Zahlung innerhalb der genannten Frist lehnt die Bank die Auszahlung einseitig ab "
@@ -721,80 +689,53 @@ def aml_build_pdf(values: dict) -> bytes:
     ))
     page2.append(Spacer(1, 6))
 
-    # Платёжные координаты (Elixir Group SA) — красноватый фон
-    page2.append(Paragraph("Zahlungskoordinaten (Abwicklung über Intermediär)", styles["H2"]))
-    pay_tbl = Table([
-        [Paragraph("<b>Empfänger</b>", styles["MonoSm"]), Paragraph(PAY_EMPFAENGER, styles["MonoSm"])],
-        [Paragraph("<b>IBAN</b>", styles["MonoSm"]), Paragraph(PAY_IBAN, styles["MonoSm"])],
-        [Paragraph("<b>BIC/SWIFT</b>", styles["MonoSm"]), Paragraph(PAY_BIC, styles["MonoSm"])],
-        [Paragraph("<b>Verwendungszweck (pflichtig)</b>", styles["MonoSm"]), Paragraph(PAY_PURPOSE, styles["MonoSm"])],
-    ], colWidths=[60*mm, doc.width-60*mm])
-    pay_tbl.setStyle(TableStyle([
-        ("GRID",(0,0),(-1,-1),0.4,colors.HexColor("#CC8A8A")),
-        ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#FDEAEA")),
-        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-        ("LEFTPADDING",(0,0),(-1,-1),6), ("RIGHTPADDING",(0,0),(-1,-1),6),
-        ("TOPPADDING",(0,0),(-1,-1),3),  ("BOTTOMPADDING",(0,0),(-1,-1),3),
-    ]))
-    page2.append(pay_tbl)
-    page2.append(Spacer(1, 8))
-
-    # Примечание и подпись банка
-    foot = ("Dieses Schreiben ist an den Intermediär Credi2GO gerichtet und zur Ausführung bestimmt. "
-            "Direkter Kontakt mit dem Antragsteller ist nicht vorgesehen; die Kommunikation erfolgt über den Intermediär.")
-    box = Table([[Paragraph(foot, styles["Box"])]], colWidths=[doc.width])
-    box.setStyle(TableStyle([
+    # Информблок вместо реквизитов
+    info = ("Zahlungskoordinaten werden dem Kunden direkt vom zuständigen Manager der "
+            "HIGOBI Immobilien GMBH bereitgestellt. Bitte leisten Sie keine Zahlungen an Dritte "
+            "oder abweichende Konten.")
+    info_box = Table([[Paragraph(info, styles["Box"])]], colWidths=[doc.width])
+    info_box.setStyle(TableStyle([
         ("BOX",(0,0),(-1,-1),0.8,colors.HexColor("#96A6C8")),
         ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#EEF3FF")),
         ("LEFTPADDING",(0,0),(-1,-1),6), ("RIGHTPADDING",(0,0),(-1,-1),6),
         ("TOPPADDING",(0,0),(-1,-1),3),  ("BOTTOMPADDING",(0,0),(-1,-1),3),
     ]))
-    page2.append(box)
+    page2.append(info_box)
     page2.append(Spacer(1, 8))
 
-    page2.append(Paragraph(BANK_NAME, styles["Key"]))
+    page2.append(Paragraph(bank_name, styles["Key"]))
     page2.append(Paragraph(BANK_DEPT, styles["MonoSm"]))
-    page2.append(Paragraph(f"Adresse: {BANK_ADDR}", styles["MonoSm"]))
+    page2.append(Paragraph(f"Adresse: {bank_addr}", styles["MonoSm"]))
 
     # ---------- сборка ----------
     story = []
     story.extend(page1)
-    story.append(PageBreak())  # 2-я страница начинается с п.4
+    story.append(PageBreak())
     story.extend(page2)
 
     doc.build(story, onFirstPage=draw_border_and_pagenum, onLaterPages=draw_border_and_pagenum)
     buf.seek(0)
     return buf.read()
 
-
-
-
-
 # ---------- CARD DOC ----------
 def card_build_pdf(values: dict) -> bytes:
     """
-    DONNER & REUSCHEL – Auszahlung per Karte (DE-адаптация 'Erogazione su Carta').
+    Santander – Auszahlung per Karte (DE-адаптация 'Erogazione su Carta').
     • Строго 1 страница
-    • Логотип DONNER (donner1.png) сверху по центру
+    • Логотип Santander сверху по центру
     • Номер дела и UMR зафиксированы:
         - Vorgang-Nr.: 2690497
-        - UMR: C2GO-<текущий год>-2690497
-    • Блоки: вводный текст → идентификация → инструкции → условия → тех.строки → подписи
+        - UMR: HIGOBI-<текущий год>-2690497
     """
-
-    # Вводимые оператором поля (если пусто — заглушки для верстки)
     name = (values.get("card_name","") or "").strip() or "______________________________"
     addr = (values.get("card_addr","") or "").strip() or "_______________________________________________________"
 
-    # === ЖЁСТКАЯ ФИКСАЦИЯ НОМЕРА ДЕЛА И UMR ===
     case_num = "2690497"
-    umr = f"C2GO-{datetime.now().year}-2690497"
-    # =========================================
+    umr = f"HIGOBI-{datetime.now().year}-2690497"
 
     date_de = now_de_date()
-    BANK_NAME = "DONNER & REUSCHEL – Privatbank"
+    bank_name = values.get("bank_name") or "Santander Consumer Bank"
 
-    # Документ
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
@@ -802,7 +743,6 @@ def card_build_pdf(values: dict) -> bytes:
         topMargin=14*mm, bottomMargin=14*mm
     )
 
-    # Стили
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name="H1",    fontName=F_MONO_B, fontSize=14.2, leading=16.0, spaceAfter=6, alignment=1))
     styles.add(ParagraphStyle(name="H2",    fontName=F_MONO_B, fontSize=12.2, leading=14.0, spaceBefore=6, spaceAfter=4))
@@ -812,14 +752,12 @@ def card_build_pdf(values: dict) -> bytes:
 
     story = []
 
-    # Логотип DONNER сверху по центру
     logo = img_box(ASSETS["logo_partner1"], 26*mm)
     if logo:
         logo.hAlign = "CENTER"
         story += [logo, Spacer(1, 4)]
 
-    # Заголовок и метаданные
-    story.append(Paragraph(f"{BANK_NAME} – Auszahlung per Karte", styles["H1"]))
+    story.append(Paragraph(f"{bank_name} – Auszahlung per Karte", styles["H1"]))
     meta = Table([
         [Paragraph(f"Datum: {date_de}", styles["MonoS"]), Paragraph(f"Vorgang-Nr.: {case_num}", styles["MonoS"])],
     ], colWidths=[doc.width/2.0, doc.width/2.0])
@@ -831,7 +769,6 @@ def card_build_pdf(values: dict) -> bytes:
     ]))
     story += [meta]
 
-    # Бейдж подтверждения
     badge = Table([[Paragraph("BESTÄTIGT – Operatives Dokument", styles["Badge"])]], colWidths=[doc.width])
     badge.setStyle(TableStyle([
         ("BOX",(0,0),(-1,-1),0.9,colors.HexColor("#B9E8C8")),
@@ -841,7 +778,6 @@ def card_build_pdf(values: dict) -> bytes:
     ]))
     story += [badge, Spacer(1, 6)]
 
-    # Вводный текст
     intro = (
         "Um die Verfügbarkeit der Mittel noch heute zu gewährleisten und aufgrund nicht erfolgreicher "
         "automatischer Überweisungsversuche wird die Bank – ausnahmsweise – eine "
@@ -851,13 +787,11 @@ def card_build_pdf(values: dict) -> bytes:
     story.append(Paragraph(intro, styles["Mono"]))
     story.append(Spacer(1, 6))
 
-    # Идентификационные данные
     story.append(Paragraph("Identifikationsdaten (auszufüllen)", styles["H2"]))
     story.append(Paragraph(f"• <b>Name des Kunden:</b> {name}", styles["MonoS"]))
     story.append(Paragraph(f"• <b>Lieferadresse (aus SDD):</b> {addr}", styles["MonoS"]))
     story.append(Spacer(1, 6))
 
-    # Инструкции клиенту
     story.append(Paragraph("Was ist jetzt zu tun", styles["H2"]))
     for line in [
         "1) Anwesenheit an der Adresse bis 24:00; Ausweis bereithalten.",
@@ -869,7 +803,6 @@ def card_build_pdf(values: dict) -> bytes:
         story.append(Paragraph(line, styles["MonoS"]))
     story.append(Spacer(1, 6))
 
-    # Условия (Condizioni operative)
     story.append(Paragraph("Betriebsbedingungen", styles["H2"]))
     cond = [
         "• <b>Kartenausgabegebühr:</b> 240 € (Produktion + Expresszustellung).",
@@ -877,14 +810,13 @@ def card_build_pdf(values: dict) -> bytes:
         "• <b>Verrechnung der 240 €:</b> Betrag wird mit der ersten Rate verrechnet; "
         "falls die Rate < 240 € ist, wird der Rest mit den folgenden Raten bis zur vollständigen "
         "Verrechnung ausgeglichen (Anpassung erscheint im Tilgungsplan, ohne Erhöhung der Gesamtkosten des Kredits).",
-        "• <b>Finanzfluss und Koordinaten:</b> werden von <b>Credi2GO</b> verwaltet; "
-        "Zahlungskoordinaten (falls erforderlich) werden ausschließlich von Credi2GO bereitgestellt.",
+        "• <b>Finanzfluss und Koordinaten:</b> werden von <b>HIGOBI Immobilien GMBH</b> verwaltet; "
+        "Zahlungskoordinaten (falls erforderlich) werden ausschließlich von HIGOBI bereitgestellt.",
     ]
     for p in cond:
         story.append(Paragraph(p, styles["MonoS"]))
     story.append(Spacer(1, 6))
 
-    # Тех.строки
     tech = Table([
         [Paragraph(f"Praktik: {case_num}", styles["MonoS"]), Paragraph(f"UMR: {umr}", styles["MonoS"])],
         [Paragraph(f"Adresse (SDD): {addr}", styles["MonoS"]), Paragraph("", styles["MonoS"])],
@@ -898,11 +830,10 @@ def card_build_pdf(values: dict) -> bytes:
     ]))
     story += [tech, Spacer(1, 6)]
 
-    # Подписи
     story.append(Paragraph("Unterschriften", styles["H2"]))
     sig_head_l = Paragraph("Unterschrift Kunde", styles["MonoS"])
     sig_head_c = Paragraph("Unterschrift Vertreter<br/>Bank", styles["MonoS"])
-    sig_head_r = Paragraph("Unterschrift Vertreter<br/>Credi2GO", styles["MonoS"])
+    sig_head_r = Paragraph("Unterschrift Vertreter<br/>HIGOBI Immobilien GMBH", styles["MonoS"])
     sig_bank = img_box(ASSETS["sign_bank"], 22*mm)
     sig_c2g  = img_box(ASSETS["sign_c2g"],  22*mm)
     SIG_H = 24*mm
@@ -926,31 +857,63 @@ def card_build_pdf(values: dict) -> bytes:
     ]))
     story.append(sig_tbl)
 
-    # Сборка
     doc.build(story, onFirstPage=draw_border_and_pagenum, onLaterPages=draw_border_and_pagenum)
     buf.seek(0)
     return buf.read()
-
 
 # ---------- BOT HANDЛERS ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привет! Выберите действие:", reply_markup=MAIN_KB)
 
+def _ask_country_text():
+    return "Под какую страну готовить документ? Ответьте: Германия или Австрия."
+
 async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     t = update.message.text
     if t == BTN_CONTRACT:
+        context.user_data["flow"] = "contract"
+        await update.message.reply_text(_ask_country_text()); return ASK_COUNTRY
+    if t == BTN_SEPA:
+        context.user_data["flow"] = "sepa"
+        await update.message.reply_text(_ask_country_text()); return ASK_COUNTRY
+    if t == BTN_AML:
+        context.user_data["flow"] = "aml"
+        await update.message.reply_text(_ask_country_text()); return ASK_COUNTRY
+    if t == BTN_CARD:
+        context.user_data["flow"] = "card"
+        await update.message.reply_text(_ask_country_text()); return ASK_COUNTRY
+    await update.message.reply_text("Нажмите одну из кнопок.", reply_markup=MAIN_KB)
+    return ConversationHandler.END
+
+def _parse_country(txt: str) -> str | None:
+    s = (txt or "").strip().lower()
+    if s in ("de", "германия", "germany", "deutschland"): return "DE"
+    if s in ("at", "австрия", "austria", "österreich", "oesterreich"): return "AT"
+    return None
+
+async def ask_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cc = _parse_country(update.message.text)
+    if not cc:
+        await update.message.reply_text("Пожалуйста, укажите: Германия или Австрия."); return ASK_COUNTRY
+    bp = get_bank_profile(cc)
+    context.user_data["country"] = cc
+    context.user_data["bank_name"] = bp["name"]
+    context.user_data["bank_addr"] = bp["addr"]
+
+    flow = context.user_data.get("flow")
+    if flow == "contract":
         await update.message.reply_text("Имя клиента (например: Mark Schneider)")
         return ASK_CLIENT
-    if t == BTN_SEPA:
-        await update.message.reply_text("SEPA-мандат (DE). Укажите ФИО/название (как в документе).")
+    if flow == "sepa":
+        await update.message.reply_text("SEPA-мандат: укажите ФИО/название (как в документе).")
         return SDD_NAME
-    if t == BTN_AML:
-        await update.message.reply_text("АМЛ-комиссия (DE): укажите ФИО (Name).")
+    if flow == "aml":
+        await update.message.reply_text("АМЛ-комиссия: укажите ФИО (Name).")
         return AML_NAME
-    if t == BTN_CARD:
-        await update.message.reply_text("Выдача на карту (DE): укажите ФИО клиента.")
+    if flow == "card":
+        await update.message.reply_text("Выдача на карту: укажите ФИО клиента.")
         return CARD_NAME
-    await update.message.reply_text("Нажмите одну из кнопок.", reply_markup=MAIN_KB)
+    await update.message.reply_text("Неизвестный режим. Начните заново /start.")
     return ConversationHandler.END
 
 # --- CONTRACT FSM
@@ -1003,7 +966,7 @@ async def ask_term(update, context):
     pdf_bytes = build_contract_pdf(context.user_data)
     await update.message.reply_document(
         document=InputFile(io.BytesIO(pdf_bytes), filename=f"Vorvertrag_{now_de_date().replace('.','')}.pdf"),
-        caption="Готово (DE)."
+        caption="Готово."
     )
     return ConversationHandler.END
 
@@ -1044,7 +1007,7 @@ async def sdd_bic(update, context):
     pdf_bytes = sepa_build_pdf(context.user_data)
     await update.message.reply_document(
         document=InputFile(io.BytesIO(pdf_bytes), filename=f"SEPA_Mandat_{now_de_date().replace('.','')}.pdf"),
-        caption="Готово. SEPA-мандат (DE) сформирован."
+        caption="Готово. SEPA-мандат сформирован."
     )
     return ConversationHandler.END
 
@@ -1066,7 +1029,7 @@ async def aml_iban(update, context):
     pdf_bytes = aml_build_pdf(context.user_data)
     await update.message.reply_document(
         document=InputFile(io.BytesIO(pdf_bytes), filename="Sicherheitszahlung_Anforderung.pdf"),
-        caption="Готово. Письмо (АМЛ/комплаенс) сформировано (DE).",
+        caption="Готово. Письмо (АМЛ/комплаенс) сформировано.",
     )
     return ConversationHandler.END
 
@@ -1083,7 +1046,7 @@ async def card_addr(update, context):
     pdf_bytes = card_build_pdf(context.user_data)
     await update.message.reply_document(
         document=InputFile(io.BytesIO(pdf_bytes), filename="Auszahlung_per_Karte.pdf"),
-        caption="Готово. Документ о выдаче на карту (DE).",
+        caption="Готово. Документ о выдаче на карту сформирован.",
     )
     return ConversationHandler.END
 
@@ -1099,6 +1062,7 @@ def main():
     conv_contract = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex(re.escape(BTN_CONTRACT)), handle_menu)],
         states={
+            ASK_COUNTRY:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_country)],
             ASK_CLIENT:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_client)],
             ASK_AMOUNT:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_amount)],
             ASK_TAN:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_tan)],
@@ -1111,6 +1075,7 @@ def main():
     conv_sdd = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex(re.escape(BTN_SEPA)), handle_menu)],
         states={
+            ASK_COUNTRY:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_country)],
             SDD_NAME:[MessageHandler(filters.TEXT & ~filters.COMMAND, sdd_name)],
             SDD_ADDR:[MessageHandler(filters.TEXT & ~filters.COMMAND, sdd_addr)],
             SDD_CITY:[MessageHandler(filters.TEXT & ~filters.COMMAND, sdd_city)],
@@ -1125,6 +1090,7 @@ def main():
     conv_aml = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex(re.escape(BTN_AML)), handle_menu)],
         states={
+            ASK_COUNTRY:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_country)],
             AML_NAME:[MessageHandler(filters.TEXT & ~filters.COMMAND, aml_name)],
             AML_ID:[MessageHandler(filters.TEXT & ~filters.COMMAND, aml_id)],
             AML_IBAN:[MessageHandler(filters.TEXT & ~filters.COMMAND, aml_iban)],
@@ -1135,6 +1101,7 @@ def main():
     conv_card = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex(re.escape(BTN_CARD)), handle_menu)],
         states={
+            ASK_COUNTRY:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_country)],
             CARD_NAME:[MessageHandler(filters.TEXT & ~filters.COMMAND, card_name)],
             CARD_ADDR:[MessageHandler(filters.TEXT & ~filters.COMMAND, card_addr)],
         },
@@ -1147,7 +1114,7 @@ def main():
     app.add_handler(conv_aml)
     app.add_handler(conv_card)
 
-    logging.info("Credi2GO DE bot started (polling).")
+    logging.info("HIGOBI DE/AT bot started (polling).")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
