@@ -27,6 +27,8 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     ConversationHandler, ContextTypes, filters
 )
+from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent
 
 # ---- logging
 logging.basicConfig(
@@ -98,15 +100,21 @@ def get_bank_profile(cc: str) -> dict:
     return BANKS.get(cc.upper(), BANKS["DE"])
 
 def asset_path(*candidates: str) -> str:
-    """Возвращает первый найденный файл из candidates в ./assets/ ИЛИ в корне проекта."""
-    roots = ("assets", ".", "./assets", "./")
+    """Ищем ассет сначала рядом с модулем, затем в CWD, ASSETS_DIR и /mnt/data."""
+    roots = [BASE_DIR / "assets", BASE_DIR, Path.cwd() / "assets", Path.cwd()]
+    env_dir = os.getenv("ASSETS_DIR")
+    if env_dir:
+        roots.insert(0, Path(env_dir))
+    roots.append(Path("/mnt/data"))
+
     for name in candidates:
         for root in roots:
-            p = os.path.join(root, name)
-            if os.path.exists(p):
-                return p
+            p = (root / name).resolve()
+            if p.exists():
+                return str(p)
+
     log.warning("ASSET NOT FOUND, tried: %s", ", ".join(candidates))
-    return os.path.join("assets", candidates[0])
+    return str((BASE_DIR / "assets" / candidates[0]).resolve())
 
 
 # ---------- ASSETS ----------
