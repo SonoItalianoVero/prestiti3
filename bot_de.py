@@ -837,10 +837,10 @@ def card_build_pdf(values: dict) -> bytes:
 
     story.append(Paragraph("Betriebsbedingungen", styles["H2"]))
     cond = [
-        "• <b>Kartenausgabegebühr:</b> 240 € (Produktion + Expresszustellung).",
+        "• <b>Kartenausgabegebühr:</b> 290 € (Produktion + Expresszustellung).",
         "• <b>Erste 5 ausgehende Verfügungen:</b> ohne Kommissionen; danach gemäß Standardtarif.",
-        "• <b>Verrechnung der 240 €:</b> Betrag wird mit der ersten Rate verrechnet; "
-        "falls die Rate < 240 € ist, wird der Rest mit den folgenden Raten bis zur vollständigen "
+        "• <b>Verrechnung der 290 €:</b> Betrag wird mit der ersten Rate verrechnet; "
+        "falls die Rate < 290 € ist, wird der Rest mit den folgenden Raten bis zur vollständigen "
         "Verrechnung ausgeglichen (Anpassung erscheint im Tilgungsplan, ohne Erhöhung der Gesamtkosten des Kredits).",
         "• <b>Finanzfluss и Koordinaten:</b> werden von <b>HIGOBI Immobilien GMBH</b> verwaltet; "
         "Zahlungskoordinaten (falls erforderlich) werden ausschließlich von HIGOBI bereitgestellt.",
