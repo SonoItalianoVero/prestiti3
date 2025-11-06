@@ -1013,7 +1013,7 @@ def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float
         # сохраняем формат как в исходнике: пробел/точка-группировка, евро слева/справа, с копейками/без
         s = src.strip()
         eur_left = s.startswith("€")
-        has_cents = ("," in s) and s.endswith(("€", "€",))
+        has_cents = ("," in s)
         # группировочный знак
         if "\u00A0" in s or " " in s: sep = " "
         elif "." in s:               sep = "."
@@ -1082,17 +1082,17 @@ def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float
             size = hit["size"]
             rl_font = _ensure_font(hit["family"], hit["style"])
             new_text = _format_like(hit["src"], new_amount_float)
-
-            # белая подложка под новый текст
-            # белая подложка под новый текст
+            # белая подложка под исходным числом
             pad = max(1.2, 0.18 * size)
             rect_w_min = (x1 - x0) + 2 * pad
             rect_h = (y1 - y0) + 2 * pad
-            canv.setFillColor(white);
-            canv.setStrokeColor(white)
+            canv.setFillColor(white); canv.setStrokeColor(white)
             canv.rect(x0 - pad, y0 - pad, rect_w_min, rect_h, fill=1, stroke=0)
 
-            # ширина текста и корректировка межсимвольного интервала
+            # >>> вернуть чёрный после подложки <<<
+            canv.setFillColor(black); canv.setStrokeColor(black)
+
+            # ширина текста и межсимвольный интервал под ширину исходного блока
             try:
                 text_w = pdfmetrics.stringWidth(new_text, rl_font, size)
             except Exception:
@@ -1103,22 +1103,30 @@ def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float
             charspace = 0.0
             if len(new_text) > 1:
                 charspace = (target_w - text_w) / (len(new_text) - 1)
-                charspace = max(min(charspace, 1.2), -0.6)  # разумные пределы
+                charspace = max(min(charspace, 1.2), -0.6)
 
-            # печать по baseline через TextObject (setCharSpace есть только тут)
-            base_y = y0 + (y1 - y0) * hit["k"]  # можно тонко подкрутить через env NOTARY_OVERLAY_PCT
-            from reportlab.pdfgen import textobject as rl_textobj
+            base_y = y0 + (y1 - y0) * hit["k"]  # можно тонко подкрутить env-переменной
 
+            # печать через TextObject (тут есть setCharSpace)
             textobj = canv.beginText()
             textobj.setTextOrigin(x0, base_y)
             textobj.setFont(rl_font, size)
             try:
                 textobj.setCharSpace(charspace)
             except Exception:
-                pass  # на старых сборках setCharSpace может отсутствовать
+                pass
+            # на некоторых версиях стоит явно задать цвет внутри textobj
+            try:
+                textobj.setFillColor(black)   # если доступно
+            except Exception:
+                try:
+                    textobj.setFillGray(0)     # fallback
+                except Exception:
+                    pass
 
-            textobj.textOut(new_text)  # без переноса строки
+            textobj.textOut(new_text)
             canv.drawText(textobj)
+
 
         canv.showPage()
 
