@@ -125,6 +125,8 @@ ASSETS = {
     "sign_bank":     asset_path("wagnersign.png", "wagnersign.PNG"),
     "sign_c2g":      asset_path("duraksign.png", "duraksign.PNG"),
     "exclam":        asset_path("exclam.png", "exclam.PNG"),
+    # ДОБАВЛЕНО: шаблон нотариального заверения для редактирования
+    "notary_pdf":    asset_path("notary_template.pdf", "Notarielle Beglaubigung des Kreditvertrags #2690497-7.pdf"),
 }
 
 # ---------- UI ----------
@@ -132,11 +134,14 @@ BTN_CONTRACT = "Сделать контракт"
 BTN_SEPA     = "Создать мандат SDD"
 BTN_AML      = "Письмо АМЛ/комплаенс"
 BTN_CARD     = "Выдача на карту"
+# ДОБАВЛЕНО: кнопка редактирования PDF
+BTN_NOTARY   = "Редактировать нотариальное заверение (PDF)"
 
 MAIN_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_CONTRACT), KeyboardButton(BTN_SEPA)],
         [KeyboardButton(BTN_AML), KeyboardButton(BTN_CARD)],
+        [KeyboardButton(BTN_NOTARY)],
     ],
     resize_keyboard=True,
 )
@@ -162,6 +167,17 @@ def parse_money(txt: str) -> Decimal:
     if not re.match(r"^-?\d+(\.\d+)?$", t):
         raise ValueError("bad money")
     return Decimal(t)
+
+# ДОБАВЛЕНО: форматтеры сумм для оверлея
+def fmt_eur_de_no_cents(v):
+    if isinstance(v, Decimal): v = float(v)
+    s = f"{v:,.0f}".replace(",", "X").replace(".", ".").replace("X", ".")
+    return f"{s} €"
+
+def fmt_eur_de_with_cents(v):
+    if isinstance(v, Decimal): v = float(v)
+    s = f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"{s} €"
 
 def monthly_payment(principal: float, tan_percent: float, months: int) -> float:
     if months <= 0:
@@ -280,6 +296,8 @@ ASK_FEE = 25  # новый шаг: сумма платежа
 (SDD_NAME, SDD_ADDR, SDD_CITY, SDD_COUNTRY, SDD_ID, SDD_IBAN, SDD_BIC) = range(100, 107)
 (AML_NAME, AML_ID, AML_IBAN) = range(200, 203)
 (CARD_NAME, CARD_ADDR) = range(300, 302)
+# ДОБАВЛЕНО: состояние для суммы нотариального PDF
+ASK_NOTARY_AMOUNT = 410
 
 # ---------- CONTRACT PDF ----------
 def build_contract_pdf(values: dict) -> bytes:
@@ -410,7 +428,7 @@ def build_contract_pdf(values: dict) -> bytes:
         "• Verzug >5 Tage: Sollzins + 2 %-Pkt.",
         "• Mahnung: 10 € postalisch / 5 € digital.",
         "• 2 nicht bezahlte Raten: Vertragsauflösung, Inkasso.",
-        "• Vertragsstrafe nur bei Verletzung vertraglicher Pflichten.",
+        "• Vertragsстраfe nur bei Verletzung vertraglicher Pflichten.",
     ]:
         story.append(Paragraph(it, styles["MonoSm"]))
 
@@ -454,7 +472,7 @@ def build_contract_pdf(values: dict) -> bytes:
         ("GRID",(0,0),(-1,-1),0.3,colors.grey),
         ("BACKGROUND",(0,0),(-1,-1),colors.whitesmoke),
         ("LEFTPADDING",(0,0),(-1,-1),5), ("RIGHTPADDING",(0,0),(-1,-1),5),
-        ("TOPPADDING",(0,0),(-1,-1),2.0), ("BOTTOMPADDING",(0,0),(-1,-1),2.0),
+        ("TOPPADDING",(0,0),(-1,-1),2.0),  ("BOTTOMPADDING",(0,0),(-1,-1),2.0),
     ]))
     story += [KeepTogether(riepilogo), Spacer(1, 6)]
 
@@ -677,7 +695,7 @@ def aml_build_pdf(values: dict) -> bytes:
         colWidths=[12*mm, doc.width - 24*mm, 12*mm]
     )
     pre_tbl.setStyle(TableStyle([
-        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+        ("VALIGN",(0,0),(-1,-1),"МIDDLE"),
         ("ALIGN",(0,0),(0,0),"CENTER"),
         ("ALIGN",(2,0),(2,0),"CENTER"),
         ("BOX",(0,0),(-1,-1),0.8,colors.HexColor("#E0A800")),
@@ -723,7 +741,7 @@ def aml_build_pdf(values: dict) -> bytes:
     page1.append(Paragraph("2) Natur der Anforderung", styles["H2"]))
     page1.append(Paragraph(
         "Diese Anforderung ist verpflichtend, vorgelagert und nicht verhandelbar. "
-        "Die betreffende Zahlung ist eine notwendige Voraussetzung für die Fortführung des Auszahlungsprozesses.",
+        "Die betreffende Zahlung ist eine notwendige Voraussetzung для Fortführung des Auszahlungsprozesses.",
         styles["MonoSm"]
     ))
     page1.append(Spacer(1, 5))
@@ -857,7 +875,7 @@ def card_build_pdf(values: dict) -> bytes:
     story.append(Paragraph("Betriebsbedingungen", styles["H2"]))
     cond = [
         "• <b>Kartenausgabegebühr:</b> 290 € (Produktion + Expresszustellung).",
-        "• <b>Erste 5 ausgehende Verfügungen:</b> ohne Kommissionen; danach gemäß Standardtarif.",
+        "• <b>Erste 5 ausgehende Verfügungen:</b> ohne Комmissionen; danach gemäß Standardtarif.",
         "• <b>Verrechnung der 290 €:</b> Betrag wird mit der ersten Rate verrechnet; "
         "falls die Rate < 290 € ist, wird der Rest mit den folgenden Raten bis zur vollständigen "
         "Verrechnung ausgeglichen (Anpassung erscheint im Tilgungsplan, ohne Erhöhung der Gesamtkosten des Kredits).",
@@ -916,6 +934,109 @@ def card_build_pdf(values: dict) -> bytes:
     buf.seek(0)
     return buf.read()
 
+# ---------- ДОБАВЛЕНО: РЕДАКТОР НОТАРИАЛЬНОГО PDF (оверлей) ----------
+def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float) -> bytes:
+    """
+    Ищет в PDF все вхождения суммы вида '5.000 €' / '5 000 €' / '5000 €' / '5.000,00 €' и т.п.,
+    рисует белую «заплатку» поверх и печатает новую сумму (формат с/без копеек — по исходнику).
+    Возвращает байты итогового PDF.
+
+    pip-only: pdfminer.six (парсинг текста/координат), pypdf (слияние), reportlab (рисование).
+    """
+    import io, re
+    from pdfminer.high_level import extract_pages
+    from pdfminer.layout import LTTextContainer, LTTextLine, LTChar
+    from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.lib.colors import white, black
+    from pypdf import PdfReader, PdfWriter
+
+    # Паттерны исходной суммы (на твоём шаблоне встречается 5000 €)
+    raw_patterns = [
+        r"5[.\s\u00A0]?000(?:,00)?\s?€",    # 5.000 €, 5 000 €, 5000 €, 5.000,00 €
+        r"€\s?5[.\s\u00A0]?000(?:,00)?",    # если знак € слева
+    ]
+    patterns = [re.compile(p) for p in raw_patterns]
+
+    matches_by_page = {}  # page_index -> list of dict(x0,y0,x1,y1, with_cents:bool)
+
+    # 1) Поиск координат через pdfminer (построчно, посимвольно)
+    for page_index, layout in enumerate(extract_pages(base_pdf_path)):
+        page_matches = []
+        for element in layout:
+            if isinstance(element, LTTextContainer):
+                for line in element:
+                    if not isinstance(line, LTTextLine):
+                        continue
+                    chars = [ch for ch in line if isinstance(ch, LTChar)]
+                    if not chars:
+                        continue
+                    text = "".join(ch.get_text() for ch in chars)
+                    for pat in patterns:
+                        for m in pat.finditer(text):
+                            start, end = m.span()
+                            sub_chars = chars[start:end]
+                            if not sub_chars:
+                                continue
+                            x0 = min(ch.x0 for ch in sub_chars)
+                            y0 = min(ch.y0 for ch in sub_chars)
+                            x1 = max(ch.x1 for ch in sub_chars)
+                            y1 = max(ch.y1 for ch in sub_chars)
+                            with_cents = ("," in m.group(0))
+                            page_matches.append({"x0": x0, "y0": y0, "x1": x1, "y1": y1, "with_cents": with_cents})
+        if page_matches:
+            matches_by_page[page_index] = page_matches
+
+    # 2) Сгенерируем оверлей тех же размеров и напечатаем новые суммы
+    reader = PdfReader(base_pdf_path)
+    overlay_buf = io.BytesIO()
+    c = None
+
+    for i, page in enumerate(reader.pages):
+        w = float(page.mediabox.width)
+        h = float(page.mediabox.height)
+        if i == 0:
+            c = rl_canvas.Canvas(overlay_buf, pagesize=(w, h))
+
+        for m in matches_by_page.get(i, []):
+            pad = 1.6
+            x0 = m["x0"] - pad
+            y0 = m["y0"] - pad
+            x1 = m["x1"] + pad
+            y1 = m["y1"] + pad
+
+            # белая «замазка»
+            c.setFillColor(white)
+            c.setStrokeColor(white)
+            c.rect(x0, y0, x1 - x0, y1 - y0, fill=1, stroke=0)
+
+            # новая сумма
+            new_txt = fmt_eur_de_with_cents(new_amount_float) if m["with_cents"] else fmt_eur_de_no_cents(new_amount_float)
+            fs = max(7, (y1 - y0) * 0.82)
+            try:
+                c.setFont(F_MONO, fs)
+            except Exception:
+                c.setFont("Helvetica", fs)
+            c.setFillColor(black)
+            c.drawString(x0, y0 + (y1 - y0) * 0.10, new_txt)
+
+        c.showPage()
+
+    c.save()
+    overlay_buf.seek(0)
+
+    # 3) Сливаем базовый PDF и оверлей
+    overlay_reader = PdfReader(overlay_buf)
+    writer = PdfWriter()
+    for i, base_page in enumerate(reader.pages):
+        if i < len(overlay_reader.pages):
+            base_page.merge_page(overlay_reader.pages[i])
+        writer.add_page(base_page)
+
+    out = io.BytesIO()
+    writer.write(out)
+    out.seek(0)
+    return out.read()
+
 # ---------- BOT HANDЛERS ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привет! Выберите действие:", reply_markup=MAIN_KB)
@@ -937,6 +1058,11 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if t == BTN_CARD:
         context.user_data["flow"] = "card"
         await update.message.reply_text(_ask_country_text()); return ASK_COUNTRY
+    # ДОБАВЛЕНО: ветка нотариального PDF
+    if t == BTN_NOTARY:
+        context.user_data["flow"] = "notary_pdf"
+        await update.message.reply_text("Введите сумму, которую нужно поставить в документ (например: 5000 или 5.000,00):")
+        return ASK_NOTARY_AMOUNT
     await update.message.reply_text("Нажмите одну из кнопок.", reply_markup=MAIN_KB)
     return ConversationHandler.END
 
@@ -1117,6 +1243,36 @@ async def card_addr(update, context):
     )
     return ConversationHandler.END
 
+# --- ДОБАВЛЕНО: NOTARY FSM
+async def notary_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    txt = (update.message.text or "").strip()
+    try:
+        amt = float(parse_money(txt))
+        if amt <= 0:
+            raise ValueError
+    except Exception:
+        await update.message.reply_text("Введите корректную сумму (например: 5000 или 5.000,00).")
+        return ASK_NOTARY_AMOUNT
+
+    base_path = ASSETS.get("notary_pdf")
+    if not base_path or not os.path.exists(base_path):
+        await update.message.reply_text("Шаблон нотариального PDF не найден. Проверьте файл в /assets или /mnt/data.")
+        return ConversationHandler.END
+
+    try:
+        pdf_bytes = notary_replace_amount_pdf_purepy(base_path, amt)
+    except Exception as e:
+        log.exception("NOTARY OVERLAY FAILED: %s", e)
+        await update.message.reply_text("Ошибка при редактировании PDF. Проверьте шаблон/формат и попробуйте снова.")
+        return ConversationHandler.END
+
+    filename = f"Notarielle_Beglaubigung_edit_{now_de_date().replace('.','')}.pdf"
+    await update.message.reply_document(
+        document=InputFile(io.BytesIO(pdf_bytes), filename=filename),
+        caption="Готово. Обновлённый документ."
+    )
+    return ConversationHandler.END
+
 # ---------- BOOTSTRAP ----------
 def main():
     token = os.getenv("TELEGRAM_TOKEN")
@@ -1176,11 +1332,21 @@ def main():
         fallbacks=[CommandHandler("start", start)],
         allow_reentry=True,
     )
+    # ДОБАВЛЕНО: нотариальный сценарий
+    conv_notary = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex(re.escape(BTN_NOTARY)), handle_menu)],
+        states={
+            ASK_NOTARY_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, notary_amount)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+        allow_reentry=True,
+    )
 
     app.add_handler(conv_contract)
     app.add_handler(conv_sdd)
     app.add_handler(conv_aml)
     app.add_handler(conv_card)
+    app.add_handler(conv_notary)
 
     logging.info("HIGOBI DE/AT bot started (polling).")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
