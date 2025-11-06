@@ -695,7 +695,7 @@ def aml_build_pdf(values: dict) -> bytes:
         colWidths=[12*mm, doc.width - 24*mm, 12*mm]
     )
     pre_tbl.setStyle(TableStyle([
-        ("VALIGN",(0,0),(-1,-1),"МIDDLE"),
+        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
         ("ALIGN",(0,0),(0,0),"CENTER"),
         ("ALIGN",(2,0),(2,0),"CENTER"),
         ("BOX",(0,0),(-1,-1),0.8,colors.HexColor("#E0A800")),
@@ -1010,14 +1010,12 @@ def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float
         return fb
 
     def _format_like(src: str, value: float) -> str:
-        # сохраняем формат как в исходнике: пробел/точка-группировка, евро слева/справа, с копейками/без
         s = src.strip()
         eur_left = s.startswith("€")
-        has_cents = ("," in s)
-        # группировочный знак
+        has_cents = ("," in s)                    # <— уже поправлено
         if "\u00A0" in s or " " in s: sep = " "
         elif "." in s:               sep = "."
-        else:                        sep = ""  # без группировки
+        else:                        sep = ""
         n = abs(value)
         i = f"{int(n):,}".replace(",", ".")
         if sep == " ": i = i.replace(".", " ")
@@ -1029,8 +1027,14 @@ def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float
             num = i
         return f"€ {num}" if eur_left else f"{num} €"
 
-    # шаблоны «5 000 €», «5.000 €», «€ 5.000,00»
-    pats = [re.compile(r"5[.\s\u00A0]?000(?:,00)?\s?€"), re.compile(r"€\s?5[.\s\u00A0]?000(?:,00)?")]
+    date_pat = re.compile(r"\b\d{2}\.\d{2}\.\d{4}\b")
+    current_date = now_de_date()  # ← берлинское время уже в твоей функции
+
+    # деньги: «5 000 €», «5.000 €», «€ 5.000,00»
+    money_pats = [
+        re.compile(r"5[.\s\u00A0]?000(?:,00)?\s?€"),
+        re.compile(r"€\s?5[.\s\u00A0]?000(?:,00)?"),
+    ]
 
     matches_by_page = {}
 
@@ -1046,25 +1050,50 @@ def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float
                 if not chars:
                     continue
                 txt = "".join(c.get_text() for c in chars)
-                for pat in pats:
+
+                # --- деньги ---
+                for pat in money_pats:
                     for m in pat.finditer(txt):
                         a, b = m.span()
                         seg = chars[a:b]
                         if not seg: continue
-                        x0 = min(c.x0 for c in seg); x1 = max(c.x1 for c in seg)
-                        y0 = min(c.y0 for c in seg); y1 = max(c.y1 for c in seg)
+                        x0 = min(c.x0 for c in seg);
+                        x1 = max(c.x1 for c in seg)
+                        y0 = min(c.y0 for c in seg);
+                        y1 = max(c.y1 for c in seg)
                         sizes = [c.size for c in seg]
                         base_size = float(median(sizes))
                         fontname = seg[0].fontname
                         fam, style = _family_and_style(fontname)
-                        # baseline коэффициент под Times/Nimbus
-                        h = (y1 - y0)
                         k = float(os.getenv("NOTARY_OVERLAY_PCT", "0.265"))
                         page_hits.append({
+                            "kind": "amount",
                             "x0": x0, "y0": y0, "x1": x1, "y1": y1,
                             "size": base_size, "family": fam, "style": style,
                             "src": m.group(0), "k": k
                         })
+
+                # --- дата ---
+                for m in date_pat.finditer(txt):
+                    a, b = m.span()
+                    seg = chars[a:b]
+                    if not seg: continue
+                    x0 = min(c.x0 for c in seg);
+                    x1 = max(c.x1 for c in seg)
+                    y0 = min(c.y0 for c in seg);
+                    y1 = max(c.y1 for c in seg)
+                    sizes = [c.size for c in seg]
+                    base_size = float(median(sizes))
+                    fontname = seg[0].fontname
+                    fam, style = _family_and_style(fontname)
+                    k = float(os.getenv("NOTARY_OVERLAY_PCT", "0.265"))
+                    page_hits.append({
+                        "kind": "date",
+                        "x0": x0, "y0": y0, "x1": x1, "y1": y1,
+                        "size": base_size, "family": fam, "style": style,
+                        "src": m.group(0), "k": k
+                    })
+
         if page_hits:
             matches_by_page[pageno] = page_hits
 
@@ -1073,7 +1102,8 @@ def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float
     canv = None
 
     for i, page in enumerate(reader.pages):
-        w = float(page.mediabox.width); h = float(page.mediabox.height)
+        w = float(page.mediabox.width);
+        h = float(page.mediabox.height)
         if i == 0:
             canv = rl_canvas.Canvas(overlay, pagesize=(w, h))
 
@@ -1081,18 +1111,24 @@ def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float
             x0, y0, x1, y1 = hit["x0"], hit["y0"], hit["x1"], hit["y1"]
             size = hit["size"]
             rl_font = _ensure_font(hit["family"], hit["style"])
-            new_text = _format_like(hit["src"], new_amount_float)
-            # белая подложка под исходным числом
+
+            # --- выбираем новый текст по типу ---
+            if hit["kind"] == "amount":
+                new_text = _format_like(hit["src"], new_amount_float)
+            else:  # date
+                new_text = current_date
+
+            # белая подложка
             pad = max(1.2, 0.18 * size)
             rect_w_min = (x1 - x0) + 2 * pad
             rect_h = (y1 - y0) + 2 * pad
-            canv.setFillColor(white); canv.setStrokeColor(white)
+            canv.setFillColor(white);
+            canv.setStrokeColor(white)
             canv.rect(x0 - pad, y0 - pad, rect_w_min, rect_h, fill=1, stroke=0)
 
-            # >>> вернуть чёрный после подложки <<<
-            canv.setFillColor(black); canv.setStrokeColor(black)
-
-            # ширина текста и межсимвольный интервал под ширину исходного блока
+            # печатаем новый текст
+            canv.setFillColor(black);
+            canv.setStrokeColor(black)
             try:
                 text_w = pdfmetrics.stringWidth(new_text, rl_font, size)
             except Exception:
@@ -1105,9 +1141,8 @@ def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float
                 charspace = (target_w - text_w) / (len(new_text) - 1)
                 charspace = max(min(charspace, 1.2), -0.6)
 
-            base_y = y0 + (y1 - y0) * hit["k"]  # можно тонко подкрутить env-переменной
+            base_y = y0 + (y1 - y0) * hit["k"]
 
-            # печать через TextObject (тут есть setCharSpace)
             textobj = canv.beginText()
             textobj.setTextOrigin(x0, base_y)
             textobj.setFont(rl_font, size)
@@ -1115,18 +1150,8 @@ def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float
                 textobj.setCharSpace(charspace)
             except Exception:
                 pass
-            # на некоторых версиях стоит явно задать цвет внутри textobj
-            try:
-                textobj.setFillColor(black)   # если доступно
-            except Exception:
-                try:
-                    textobj.setFillGray(0)     # fallback
-                except Exception:
-                    pass
-
             textobj.textOut(new_text)
             canv.drawText(textobj)
-
 
         canv.showPage()
 
@@ -1141,7 +1166,8 @@ def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float
         writer.add_page(page)
 
     out = io.BytesIO()
-    writer.write(out); out.seek(0)
+    writer.write(out);
+    out.seek(0)
     return out.read()
 
 # ---------- BOT HANDЛERS ----------
