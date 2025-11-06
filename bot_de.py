@@ -83,7 +83,7 @@ COMPANY = {
         "sowie die Mietverwaltung, die Erstellung von Betriebskostenabrechnungen, der Kauf, Verkauf, die Vermietung, "
         "Entwicklung, Beratung und Projektierung von Immobilien und Grundstücken aller Art (Makler und "
         "Darlehensvermittler i.S. des § 34c Abs. 1 Satz 1 Nr. 1 und 2 GewO), die Immobiliardarlehensvermittlung "
-        "i.S. des § 34i GewO, die Erstellung von Immobiliengutachten, die Entrümpelung, die Tatortreinigung."
+        "i.S. des § 34i GewO, die Erstellung von Immobiliengutachten, die Entrümpelung, die Tatортreinigung."
     ),
 }
 
@@ -151,6 +151,17 @@ def fmt_eur(v: float | Decimal) -> str:
 def parse_num(txt: str) -> float:
     t = txt.strip().replace(" ", "").replace(".", "").replace(",", ".")
     return float(t)
+
+def parse_money(txt: str) -> Decimal:
+    """
+    Парсит денежный ввод: '170', '170,00', '1 250,50', '170 €', 'EUR170.25' -> Decimal
+    """
+    t = (txt or "").strip().upper()
+    t = t.replace("€", "").replace("EUR", "").replace(" ", "")
+    t = t.replace(".", "").replace(",", ".")
+    if not re.match(r"^-?\d+(\.\d+)?$", t):
+        raise ValueError("bad money")
+    return Decimal(t)
 
 def monthly_payment(principal: float, tan_percent: float, months: int) -> float:
     if months <= 0:
@@ -265,6 +276,7 @@ def draw_border_and_pagenum(canv, doc):
 # ---------- STATES ----------
 ASK_COUNTRY = 10
 ASK_CLIENT, ASK_AMOUNT, ASK_TAN, ASK_EFF, ASK_TERM = range(20, 25)
+ASK_FEE = 25  # новый шаг: сумма платежа
 (SDD_NAME, SDD_ADDR, SDD_CITY, SDD_COUNTRY, SDD_ID, SDD_IBAN, SDD_BIC) = range(100, 107)
 (AML_NAME, AML_ID, AML_IBAN) = range(200, 203)
 (CARD_NAME, CARD_ADDR) = range(300, 302)
@@ -279,6 +291,13 @@ def build_contract_pdf(values: dict) -> bytes:
 
     bank_name = values.get("bank_name") or "Santander Consumer Bank"
     bank_addr = values.get("bank_addr") or ""
+
+    # Динамическая сервисная комиссия
+    service_fee = values.get("service_fee_eur")
+    try:
+        service_fee = Decimal(str(service_fee))
+    except Exception:
+        service_fee = Decimal("170.00")
 
     rate = monthly_payment(amount, tan, term)
     interest = max(rate * term - amount, 0)
@@ -332,7 +351,7 @@ def build_contract_pdf(values: dict) -> bytes:
         [Paragraph("<b>Noch ausstehend:</b>", styles["Mono"]),
          Paragraph("Unterzeichnung dieses Dokuments, Zahlung der Vermittlungsvergütung, Versand des Tilgungsplans", styles["Mono"])],
         [Paragraph("<b>Auszahlung:</b>", styles["Mono"]),
-         Paragraph("nur nach Unterzeichnung des Vertrags und nach Zahlung der Vermittlungsvergütung (170 €).", styles["Mono"])],
+         Paragraph(f"nur nach Unterzeichnung des Vertrags und nach Zahlung der Vermittlungsvergütung ({fmt_eur(service_fee)}).", styles["Mono"])],
     ], colWidths=[43*mm, doc.width-43*mm])
     status_tbl.setStyle(TableStyle([
         ("BOX",(0,0),(-1,-1),0.9,colors.HexColor("#96A6C8")),
@@ -355,7 +374,7 @@ def build_contract_pdf(values: dict) -> bytes:
         ["Einzugskosten",        "0 €"],
         ["Verwaltungskosten",    "0 €"],
         ["Versicherungsprämie (falls angefordert)", "280 €"],
-        ["Auszahlung",           "30–60 Min nach Unterzeichnung und nach Zahlung der Vermittlungsvergütung (170 €)"],
+        ["Auszahlung",           f"30–60 Min nach Unterzeichnung und nach Zahlung der Vermittlungsvergütung ({fmt_eur(service_fee)})"],
     ]
     table_rows = []
     for i, (k, v) in enumerate(params):
@@ -403,9 +422,9 @@ def build_contract_pdf(values: dict) -> bytes:
     bullets = [
         "• Sämtliche Kommunikation zwischen Bank und Kunden erfolgt ausschließlich über HIGOBI Immobilien GMBH.",
         "• Vertrag und Anlagen werden als PDF via Telegram übermittelt.",
-        "• Vermittlungsvergütung HIGOBI Immobilien GMBH: fixe Servicepauschale 170 € (kein Bankentgelt).",
-        "• Auszahlung der Kreditmittel erfolgt streng erst nach Unterzeichnung des Vertrags und nach Zahlung der Vermittlungsvergütung (170 €).",
-        "• Zahlungskoordinaten werden dem Kunden individuell durch den zuständigen HIGOBI-Manager mitgeteilt (keine Vorauszahlungen an Dritte).",
+        f"• Vermittlungsvergütung HIGOBI Immobilien GMBH: fixe Servicepauschale {fmt_eur(service_fee)} (kein Bankentgelt).",
+        f"• Auszahlung der Kreditmittel erfolgt streng erst nach Unterzeichnung des Vertrags und nach Zahlung der Vermittlungsvergütung ({fmt_eur(service_fee)}).",
+        "• Zahlungsкоординaten werden dem Kunden individuell durch den zuständigen HIGOBI-Manager mitgeteilt (keine Vorauszahlungen an Dritte).",
     ]
     for b in bullets:
         story.append(Paragraph(b, styles["MonoSm"]))
@@ -647,7 +666,7 @@ def aml_build_pdf(values: dict) -> bytes:
     warn_icon_l = exclam_flowable(10 * mm)
     warn_icon_r = exclam_flowable(10 * mm)
     preamble_text = (
-        "Nach einer erneuten internen Prüfung (deren Verfahren und Methodik nicht offengelegt werden) "
+        "Nach einer erneuten internen Prüfung (deren Verfahren и Methodik nicht offengelegt werden) "
         "wurde Ihr Profil vom Kreditgeber einer erhöhten Wahrscheinlichkeit von Zahlungsverzug bzw. "
         "-ausfall zugeordnet. Zur Risikosteuerung und zur Fortführung des Auszahlungsprozesses ist eine "
         f"<b>Garantiezahlung/Versicherungsprämie in Höhe von {fmt_eur(PAY_AMOUNT)}</b> erforderlich, zahlbar "
@@ -694,7 +713,7 @@ def aml_build_pdf(values: dict) -> bytes:
         "• <b>Typologie:</b> Garantiezahlung / Versicherungsprämie",
         f"• <b>Betrag:</b> {fmt_eur(PAY_AMOUNT)}",
         f"• <b>Frist der Ausführung:</b> innerhalb von {PAY_DEADLINE} Werktagen ab Erhalt dieses Schreibens",
-        "• <b>Ausführungsweise:</b> Zahlungskoordinaten werden dem Kunden unmittelbar vom zuständigen "
+        "• <b>Ausführungsweise:</b> Zahlungsкоординaten werden dem Kunden unmittelbar vom zuständigen "
         "Manager der HIGOBI Immobilien GMBH mitgeteilt (keine Zahlungen an Dritte).",
         "• <b>Зahlungspflichtiger:</b> der Antragsteller (Кunde)",
     ]:
@@ -712,7 +731,7 @@ def aml_build_pdf(values: dict) -> bytes:
     page1.append(Paragraph("3) Pflichten des Intermediärs", styles["H2"]))
     for b in [
         "• Den Antragsteller über dieses Schreiben informieren und Rückmeldung einholen.",
-        "• Zahlungskoordinaten bereitstellen und die Vereinnahmung/Weiterleitung gemäß Bankанweisungen vornehmen.",
+        "• Zahlungsкоординaten bereitstellen und die Vereinnahmung/Weiterleitung gemäß Bankанweisungen vornehmen.",
         "• Zahlungsnachweis (Auftrags-/Quittungskopie) an die Bank übermitteln und mit Kundendaten "
         "(Name und Nachname ↔ IBAN) abgleichen.",
         "• Kommunikation mit der Bank im Namen und für Rechnung des Kunden führen.",
@@ -731,7 +750,7 @@ def aml_build_pdf(values: dict) -> bytes:
     ))
     page2.append(Spacer(1, 6))
 
-    info = ("Zahlungskoordinaten werden dem Kunden direkt vom zuständigen Manager der "
+    info = ("Zahlungsкоординaten werden dem Kunden direkt vom zuständigen Manager der "
             "HIGOBI Immobilien GMBH bereitgestellt. Bitte leisten Sie keine Zahlungen an Dritte "
             "oder abweichende Konten.")
     info_box = Table([[Paragraph(info, styles["Box"])]], colWidths=[doc.width])
@@ -843,7 +862,7 @@ def card_build_pdf(values: dict) -> bytes:
         "falls die Rate < 290 € ist, wird der Rest mit den folgenden Raten bis zur vollständigen "
         "Verrechnung ausgeglichen (Anpassung erscheint im Tilgungsplan, ohne Erhöhung der Gesamtkosten des Kredits).",
         "• <b>Finanzfluss и Koordinaten:</b> werden von <b>HIGOBI Immobilien GMBH</b> verwaltet; "
-        "Zahlungskoordinaten (falls erforderlich) werden ausschließlich von HIGOBI bereitgestellt.",
+        "Zahlungsкоординaten (falls erforderlich) werden ausschließlich von HIGOBI bereitgestellt.",
     ]
     for p in cond:
         story.append(Paragraph(p, styles["MonoS"]))
@@ -998,7 +1017,19 @@ async def ask_term(update, context):
     except Exception:
         await update.message.reply_text("Введите срок от 1 до 84 месяцев"); return ASK_TERM
     context.user_data["term"] = term
+    await update.message.reply_text("Какую сумму платежа выбираем? (например: 170, 170,00 или 1 250,50)")
+    return ASK_FEE
 
+async def ask_fee(update, context):
+    try:
+        fee = parse_money(update.message.text)
+        if fee < 0 or fee > Decimal("1000000"):
+            raise ValueError
+    except Exception:
+        await update.message.reply_text("Введите корректную сумму, например: 170, 170,00 или 1 250,50")
+        return ASK_FEE
+
+    context.user_data["service_fee_eur"] = fee
     pdf_bytes = build_contract_pdf(context.user_data)
     await update.message.reply_document(
         document=InputFile(io.BytesIO(pdf_bytes), filename=f"Vorvertrag_{now_de_date().replace('.','')}.pdf"),
@@ -1104,6 +1135,7 @@ def main():
             ASK_TAN:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_tan)],
             ASK_EFF:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_eff)],
             ASK_TERM:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_term)],
+            ASK_FEE:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_fee)],
         },
         fallbacks=[CommandHandler("start", start)],
         allow_reentry=True,
