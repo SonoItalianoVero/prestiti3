@@ -936,7 +936,7 @@ def card_build_pdf(values: dict) -> bytes:
 
 # ---------- ДОБАВЛЕНО: РЕДАКТОР НОТАРИАЛЬНОГО PDF (оверлей) ----------
 def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float) -> bytes:
-    import io, re, os
+    import io, os, re
     from statistics import median
     from pdfminer.high_level import extract_pages
     from pdfminer.layout import LTTextContainer, LTTextLine, LTChar
@@ -946,185 +946,187 @@ def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float
     from reportlab.pdfbase.ttfonts import TTFont
     from pypdf import PdfReader, PdfWriter
 
-    # --- опциональная регистрация Times, если файл есть в проекте
-    def _try_register_ttf():
-        candidates = [
-            "fonts/TimesNewRoman.ttf",
-            "fonts/TimesNewRomanPSMT.ttf",
-            "fonts/NimbusRomNo9L-Regu.ttf",
-        ]
-        for p in candidates:
-            if os.path.exists(p):
-                try:
-                    pdfmetrics.registerFont(TTFont("TNR_LOCAL", p))
-                    return "TNR_LOCAL"
-                except Exception:
-                    pass
-        return None
+    # ---- локальная карта семейств -> файлы начертаний
+    FONT_CANDIDATES = {
+        "TimesNewRomanPS": {
+            "regular": "fonts/TimesNewRomanPSMT.ttf",
+            "bold": "fonts/TimesNewRomanPS-BoldMT.ttf",
+            "italic": "fonts/TimesNewRomanPS-ItalicMT.ttf",
+            "bolditalic": "fonts/TimesNewRomanPS-BoldItalicMT.ttf",
+        },
+        "NimbusRomNo9L": {
+            "regular": "fonts/NimbusRomNo9L-Regu.ttf",
+            "bold": "fonts/NimbusRomNo9L-Medi.ttf",
+            "italic": "fonts/NimbusRomNo9L-RegIta.ttf",
+            "bolditalic": "fonts/NimbusRomNo9L-MedIta.ttf",
+        },
+        "DejaVuSerif": {
+            "regular": "fonts/DejaVuSerif.ttf",
+            "bold": "fonts/DejaVuSerif-Bold.ttf",
+            "italic": "fonts/DejaVuSerif-Italic.ttf",
+            "bolditalic": "fonts/DejaVuSerif-BoldItalic.ttf",
+        },
+    }
 
-    TNR_LOCAL = _try_register_ttf()
+    _registered = {}  # key -> reportlab-fontname
 
-    def _map_fontname(fn: str) -> str:
-        s = (fn or "").lower()
-        if "times" in s or "newrom" in s or "nimbusrom" in s or "serif" in s:
-            return TNR_LOCAL or "Times-Roman"
-        if "arial" in s or "helvetica" in s or "sans" in s:
-            return "Helvetica"
-        if "courier" in s or "mono" in s:
-            return "Courier"
-        # дефолт — Times, ближе всего к нотариальным письмам
-        return TNR_LOCAL or "Times-Roman"
+    def _strip_subset(fn: str) -> str:
+        # 'ABCDEE+TimesNewRomanPSMT' -> 'TimesNewRomanPSMT'
+        return re.sub(r"^[A-Z]{6}\+", "", fn or "")
 
-    # форматирование числа "как в исходнике"
+    def _family_and_style(fontname: str):
+        """Определяем семейство и стиль по имени шрифта из PDF."""
+        base = _strip_subset(fontname)
+        low = base.lower()
+        # стиль
+        bold = ("bold" in low) or ("medi" in low) or ("demi" in low)
+        italic = ("italic" in low) or ("oblique" in low) or ("ita" in low)
+        style = "bolditalic" if (bold and italic) else ("bold" if bold else ("italic" if italic else "regular"))
+        # семья
+        if "timesnewroman" in low: fam = "TimesNewRomanPS"
+        elif "nimbusrom" in low:   fam = "NimbusRomNo9L"
+        elif "dejavuserif" in low: fam = "DejaVuSerif"
+        elif "times" in low:       fam = "NimbusRomNo9L"  # безопасная замена Times
+        else:                       fam = "NimbusRomNo9L"
+        return fam, style
+
+    def _ensure_font(family: str, style: str) -> str:
+        """Регистрирует TTF если есть; возвращает имя для setFont()."""
+        key = f"{family}-{style}"
+        if key in _registered:
+            return _registered[key]
+        path = FONT_CANDIDATES.get(family, {}).get(style)
+        if path and os.path.exists(path):
+            rl_name = f"{family}_{style}"
+            try:
+                pdfmetrics.registerFont(TTFont(rl_name, path))
+                _registered[key] = rl_name
+                return rl_name
+            except Exception:
+                pass
+        # fallbacks (base14)
+        fb = "Times-Roman" if style in ("regular", "italic") else "Times-Bold"
+        _registered[key] = fb
+        return fb
+
     def _format_like(src: str, value: float) -> str:
-        src = src.strip()
-        eur_left = src.startswith("€")
-        has_cents = ("," in src)
-        if " " in src or "\u00A0" in src:
-            grp = "space"
-        elif "." in src:
-            grp = "dot"
-        else:
-            grp = "none"
-
+        # сохраняем формат как в исходнике: пробел/точка-группировка, евро слева/справа, с копейками/без
+        s = src.strip()
+        eur_left = s.startswith("€")
+        has_cents = ("," in s) and s.endswith(("€", "€",))
+        # группировочный знак
+        if "\u00A0" in s or " " in s: sep = " "
+        elif "." in s:               sep = "."
+        else:                        sep = ""  # без группировки
         n = abs(value)
+        i = f"{int(n):,}".replace(",", ".")
+        if sep == " ": i = i.replace(".", " ")
+        if sep == "":  i = i.replace(".", "")
         if has_cents:
-            int_part = f"{int(n):,}".replace(",", "X").replace("X", ".")  # тысячные через точку
             frac = f"{n:.2f}".split(".")[1]
-            num = f"{int_part},{frac}"
+            num = f"{i},{frac}"
         else:
-            int_part = f"{int(n):,}".replace(",", "X").replace("X", ".")
-            num = int_part
+            num = i
+        return f"€ {num}" if eur_left else f"{num} €"
 
-        if grp == "space":
-            num = num.replace(".", " ")
-        elif grp == "none":
-            num = num.replace(".", "")
+    # шаблоны «5 000 €», «5.000 €», «€ 5.000,00»
+    pats = [re.compile(r"5[.\s\u00A0]?000(?:,00)?\s?€"), re.compile(r"€\s?5[.\s\u00A0]?000(?:,00)?")]
 
-        out = f"{num} €"
-        if eur_left:
-            out = f"€ {num}"
-        return out
+    matches_by_page = {}
 
-    # ищем шаблоны 5.000 €, € 5.000,00, 5000 €, 5 000 €
-    raw_patterns = [
-        r"5[.\s\u00A0]?000(?:,00)?\s?€",
-        r"€\s?5[.\s\u00A0]?000(?:,00)?",
-    ]
-    patterns = [re.compile(p) for p in raw_patterns]
-
-    matches_by_page = {}  # page -> list of boxes with font/size/format
-
-    for page_index, layout in enumerate(extract_pages(base_pdf_path)):
-        page_matches = []
-        for element in layout:
-            if not isinstance(element, LTTextContainer):
+    for pageno, layout in enumerate(extract_pages(base_pdf_path)):
+        page_hits = []
+        for box in layout:
+            if not isinstance(box, LTTextContainer):
                 continue
-            for line in element:
+            for line in box:
                 if not isinstance(line, LTTextLine):
                     continue
                 chars = [ch for ch in line if isinstance(ch, LTChar)]
                 if not chars:
                     continue
-                text = "".join(ch.get_text() for ch in chars)
-
-                for pat in patterns:
-                    for m in pat.finditer(text):
-                        start, end = m.span()
-                        sub = chars[start:end]
-                        if not sub:
-                            continue
-
-                        x0 = min(c.x0 for c in sub); y0 = min(c.y0 for c in sub)
-                        x1 = max(c.x1 for c in sub); y1 = max(c.y1 for c in sub)
-                        sizes = [c.size for c in sub]
-                        fontnames = [c.fontname for c in sub]
-                        base_font = fontnames[0] if fontnames else ""
-                        base_size = median(sizes) if sizes else (y1 - y0)
-
-                        # оценка baseline: доля высоты строки зависит от семейства
-                        family = _map_fontname(base_font)
-                        h = (y1 - y0) if (y1 > y0) else base_size
-                        # индивидуальные коэффициенты (эмпирические)
-                        if "Times" in family or "TNR_LOCAL" == family:
-                            k = 0.26
-                        elif "Helvetica" in family:
-                            k = 0.22
-                        elif "Courier" in family:
-                            k = 0.18
-                        else:
-                            k = 0.24
-                        # ручная тонкая настройка через env (например 0.24 -> baseline выше)
-                        try:
-                            k_env = float(os.getenv("NOTARY_OVERLAY_PCT", "").strip() or "nan")
-                            if k_env == k_env:  # не NaN
-                                k = k_env
-                        except Exception:
-                            pass
-
-                        page_matches.append({
+                txt = "".join(c.get_text() for c in chars)
+                for pat in pats:
+                    for m in pat.finditer(txt):
+                        a, b = m.span()
+                        seg = chars[a:b]
+                        if not seg: continue
+                        x0 = min(c.x0 for c in seg); x1 = max(c.x1 for c in seg)
+                        y0 = min(c.y0 for c in seg); y1 = max(c.y1 for c in seg)
+                        sizes = [c.size for c in seg]
+                        base_size = float(median(sizes))
+                        fontname = seg[0].fontname
+                        fam, style = _family_and_style(fontname)
+                        # baseline коэффициент под Times/Nimbus
+                        h = (y1 - y0)
+                        k = float(os.getenv("NOTARY_OVERLAY_PCT", "0.265"))
+                        page_hits.append({
                             "x0": x0, "y0": y0, "x1": x1, "y1": y1,
-                            "font": family, "size": float(base_size),
-                            "src_text": m.group(0), "k": float(k)
+                            "size": base_size, "family": fam, "style": style,
+                            "src": m.group(0), "k": k
                         })
-        if page_matches:
-            matches_by_page[page_index] = page_matches
+        if page_hits:
+            matches_by_page[pageno] = page_hits
 
     reader = PdfReader(base_pdf_path)
-    overlay_buf = io.BytesIO()
-    c = None
+    overlay = io.BytesIO()
+    canv = None
 
     for i, page in enumerate(reader.pages):
         w = float(page.mediabox.width); h = float(page.mediabox.height)
         if i == 0:
-            c = rl_canvas.Canvas(overlay_buf, pagesize=(w, h))
+            canv = rl_canvas.Canvas(overlay, pagesize=(w, h))
 
-        for m in matches_by_page.get(i, []):
-            x0, y0, x1, y1 = m["x0"], m["y0"], m["x1"], m["y1"]
-            font_name = m["font"]; font_size = m["size"]
-            new_txt = _format_like(m["src_text"], new_amount_float)
+        for hit in matches_by_page.get(i, []):
+            x0, y0, x1, y1 = hit["x0"], hit["y0"], hit["x1"], hit["y1"]
+            size = hit["size"]
+            rl_font = _ensure_font(hit["family"], hit["style"])
+            new_text = _format_like(hit["src"], new_amount_float)
 
-            # ширина новой строки (для корректной «замазки»)
-            try:
-                text_w = pdfmetrics.stringWidth(new_txt, font_name, font_size)
-            except Exception:
-                font_name = "Times-Roman"  # fallback
-                text_w = pdfmetrics.stringWidth(new_txt, font_name, font_size)
-
-            pad = max(1.2, 0.18 * font_size)
-            rect_w = max((x1 - x0), text_w) + 2 * pad
+            # белая подложка под новый текст
+            pad = max(1.2, 0.18 * size)
+            rect_w_min = (x1 - x0) + 2 * pad
             rect_h = (y1 - y0) + 2 * pad
+            canv.setFillColor(white); canv.setStrokeColor(white)
+            canv.rect(x0 - pad, y0 - pad, rect_w_min, rect_h, fill=1, stroke=0)
 
-            # белая плашка (слегка шире исходника)
-            c.setFillColor(white); c.setStrokeColor(white)
-            c.rect(x0 - pad, y0 - pad, rect_w, rect_h, fill=1, stroke=0)
-
-            # печатаем по рассчитанному baseline
-            baseline_y = y0 + (y1 - y0) * m["k"]
+            # ширина текста и корректировка межсимвольного интервала
             try:
-                c.setFont(font_name, font_size)
+                text_w = pdfmetrics.stringWidth(new_text, rl_font, size)
             except Exception:
-                c.setFont("Times-Roman", font_size)
+                rl_font = "Times-Roman"; text_w = pdfmetrics.stringWidth(new_text, rl_font, size)
 
-            c.setFillColor(black)
-            c.drawString(x0, baseline_y, new_txt)
+            target_w = (x1 - x0)  # стараемся уложиться точно в исходную «дырку»
+            charspace = 0.0
+            if len(new_text) > 1:
+                charspace = (target_w - text_w) / (len(new_text) - 1)
+                # ограничим адекватными рамками
+                charspace = max(min(charspace, 1.2), -0.6)
 
-        c.showPage()
+            # печать по baseline
+            base_y = y0 + (y1 - y0) * hit["k"]
+            canv.setFillColor(black)
+            canv.setFont(rl_font, size)
+            canv.setCharSpace(charspace)
+            canv.drawString(x0, base_y, new_text)
+            canv.setCharSpace(0)
 
-    c.save()
-    overlay_buf.seek(0)
+        canv.showPage()
 
-    overlay_reader = PdfReader(overlay_buf)
+    canv.save()
+    overlay.seek(0)
+
+    over_reader = PdfReader(overlay)
     writer = PdfWriter()
-    for i, base_page in enumerate(reader.pages):
-        if i < len(overlay_reader.pages):
-            base_page.merge_page(overlay_reader.pages[i])
-        writer.add_page(base_page)
+    for i, page in enumerate(reader.pages):
+        if i < len(over_reader.pages):
+            page.merge_page(over_reader.pages[i])
+        writer.add_page(page)
 
     out = io.BytesIO()
-    writer.write(out)
-    out.seek(0)
+    writer.write(out); out.seek(0)
     return out.read()
+
 # ---------- BOT HANDЛERS ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привет! Выберите действие:", reply_markup=MAIN_KB)
