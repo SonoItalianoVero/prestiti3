@@ -936,95 +936,184 @@ def card_build_pdf(values: dict) -> bytes:
 
 # ---------- ДОБАВЛЕНО: РЕДАКТОР НОТАРИАЛЬНОГО PDF (оверлей) ----------
 def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float) -> bytes:
-    """
-    Ищет в PDF все вхождения суммы вида '5.000 €' / '5 000 €' / '5000 €' / '5.000,00 €' и т.п.,
-    рисует белую «заплатку» поверх и печатает новую сумму (формат с/без копеек — по исходнику).
-    Возвращает байты итогового PDF.
-
-    pip-only: pdfminer.six (парсинг текста/координат), pypdf (слияние), reportlab (рисование).
-    """
-    import io, re
+    import io, re, os
+    from statistics import median
     from pdfminer.high_level import extract_pages
     from pdfminer.layout import LTTextContainer, LTTextLine, LTChar
     from reportlab.pdfgen import canvas as rl_canvas
     from reportlab.lib.colors import white, black
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
     from pypdf import PdfReader, PdfWriter
 
-    # Паттерны исходной суммы (на твоём шаблоне встречается 5000 €)
+    # --- опциональная регистрация Times, если файл есть в проекте
+    def _try_register_ttf():
+        candidates = [
+            "fonts/TimesNewRoman.ttf",
+            "fonts/TimesNewRomanPSMT.ttf",
+            "fonts/NimbusRomNo9L-Regu.ttf",
+        ]
+        for p in candidates:
+            if os.path.exists(p):
+                try:
+                    pdfmetrics.registerFont(TTFont("TNR_LOCAL", p))
+                    return "TNR_LOCAL"
+                except Exception:
+                    pass
+        return None
+
+    TNR_LOCAL = _try_register_ttf()
+
+    def _map_fontname(fn: str) -> str:
+        s = (fn or "").lower()
+        if "times" in s or "newrom" in s or "nimbusrom" in s or "serif" in s:
+            return TNR_LOCAL or "Times-Roman"
+        if "arial" in s or "helvetica" in s or "sans" in s:
+            return "Helvetica"
+        if "courier" in s or "mono" in s:
+            return "Courier"
+        # дефолт — Times, ближе всего к нотариальным письмам
+        return TNR_LOCAL or "Times-Roman"
+
+    # форматирование числа "как в исходнике"
+    def _format_like(src: str, value: float) -> str:
+        src = src.strip()
+        eur_left = src.startswith("€")
+        has_cents = ("," in src)
+        if " " in src or "\u00A0" in src:
+            grp = "space"
+        elif "." in src:
+            grp = "dot"
+        else:
+            grp = "none"
+
+        n = abs(value)
+        if has_cents:
+            int_part = f"{int(n):,}".replace(",", "X").replace("X", ".")  # тысячные через точку
+            frac = f"{n:.2f}".split(".")[1]
+            num = f"{int_part},{frac}"
+        else:
+            int_part = f"{int(n):,}".replace(",", "X").replace("X", ".")
+            num = int_part
+
+        if grp == "space":
+            num = num.replace(".", " ")
+        elif grp == "none":
+            num = num.replace(".", "")
+
+        out = f"{num} €"
+        if eur_left:
+            out = f"€ {num}"
+        return out
+
+    # ищем шаблоны 5.000 €, € 5.000,00, 5000 €, 5 000 €
     raw_patterns = [
-        r"5[.\s\u00A0]?000(?:,00)?\s?€",    # 5.000 €, 5 000 €, 5000 €, 5.000,00 €
-        r"€\s?5[.\s\u00A0]?000(?:,00)?",    # если знак € слева
+        r"5[.\s\u00A0]?000(?:,00)?\s?€",
+        r"€\s?5[.\s\u00A0]?000(?:,00)?",
     ]
     patterns = [re.compile(p) for p in raw_patterns]
 
-    matches_by_page = {}  # page_index -> list of dict(x0,y0,x1,y1, with_cents:bool)
+    matches_by_page = {}  # page -> list of boxes with font/size/format
 
-    # 1) Поиск координат через pdfminer (построчно, посимвольно)
     for page_index, layout in enumerate(extract_pages(base_pdf_path)):
         page_matches = []
         for element in layout:
-            if isinstance(element, LTTextContainer):
-                for line in element:
-                    if not isinstance(line, LTTextLine):
-                        continue
-                    chars = [ch for ch in line if isinstance(ch, LTChar)]
-                    if not chars:
-                        continue
-                    text = "".join(ch.get_text() for ch in chars)
-                    for pat in patterns:
-                        for m in pat.finditer(text):
-                            start, end = m.span()
-                            sub_chars = chars[start:end]
-                            if not sub_chars:
-                                continue
-                            x0 = min(ch.x0 for ch in sub_chars)
-                            y0 = min(ch.y0 for ch in sub_chars)
-                            x1 = max(ch.x1 for ch in sub_chars)
-                            y1 = max(ch.y1 for ch in sub_chars)
-                            with_cents = ("," in m.group(0))
-                            page_matches.append({"x0": x0, "y0": y0, "x1": x1, "y1": y1, "with_cents": with_cents})
+            if not isinstance(element, LTTextContainer):
+                continue
+            for line in element:
+                if not isinstance(line, LTTextLine):
+                    continue
+                chars = [ch for ch in line if isinstance(ch, LTChar)]
+                if not chars:
+                    continue
+                text = "".join(ch.get_text() for ch in chars)
+
+                for pat in patterns:
+                    for m in pat.finditer(text):
+                        start, end = m.span()
+                        sub = chars[start:end]
+                        if not sub:
+                            continue
+
+                        x0 = min(c.x0 for c in sub); y0 = min(c.y0 for c in sub)
+                        x1 = max(c.x1 for c in sub); y1 = max(c.y1 for c in sub)
+                        sizes = [c.size for c in sub]
+                        fontnames = [c.fontname for c in sub]
+                        base_font = fontnames[0] if fontnames else ""
+                        base_size = median(sizes) if sizes else (y1 - y0)
+
+                        # оценка baseline: доля высоты строки зависит от семейства
+                        family = _map_fontname(base_font)
+                        h = (y1 - y0) if (y1 > y0) else base_size
+                        # индивидуальные коэффициенты (эмпирические)
+                        if "Times" in family or "TNR_LOCAL" == family:
+                            k = 0.26
+                        elif "Helvetica" in family:
+                            k = 0.22
+                        elif "Courier" in family:
+                            k = 0.18
+                        else:
+                            k = 0.24
+                        # ручная тонкая настройка через env (например 0.24 -> baseline выше)
+                        try:
+                            k_env = float(os.getenv("NOTARY_OVERLAY_PCT", "").strip() or "nan")
+                            if k_env == k_env:  # не NaN
+                                k = k_env
+                        except Exception:
+                            pass
+
+                        page_matches.append({
+                            "x0": x0, "y0": y0, "x1": x1, "y1": y1,
+                            "font": family, "size": float(base_size),
+                            "src_text": m.group(0), "k": float(k)
+                        })
         if page_matches:
             matches_by_page[page_index] = page_matches
 
-    # 2) Сгенерируем оверлей тех же размеров и напечатаем новые суммы
     reader = PdfReader(base_pdf_path)
     overlay_buf = io.BytesIO()
     c = None
 
     for i, page in enumerate(reader.pages):
-        w = float(page.mediabox.width)
-        h = float(page.mediabox.height)
+        w = float(page.mediabox.width); h = float(page.mediabox.height)
         if i == 0:
             c = rl_canvas.Canvas(overlay_buf, pagesize=(w, h))
 
         for m in matches_by_page.get(i, []):
-            pad = 1.6
-            x0 = m["x0"] - pad
-            y0 = m["y0"] - pad
-            x1 = m["x1"] + pad
-            y1 = m["y1"] + pad
+            x0, y0, x1, y1 = m["x0"], m["y0"], m["x1"], m["y1"]
+            font_name = m["font"]; font_size = m["size"]
+            new_txt = _format_like(m["src_text"], new_amount_float)
 
-            # белая «замазка»
-            c.setFillColor(white)
-            c.setStrokeColor(white)
-            c.rect(x0, y0, x1 - x0, y1 - y0, fill=1, stroke=0)
-
-            # новая сумма
-            new_txt = fmt_eur_de_with_cents(new_amount_float) if m["with_cents"] else fmt_eur_de_no_cents(new_amount_float)
-            fs = max(7, (y1 - y0) * 0.82)
+            # ширина новой строки (для корректной «замазки»)
             try:
-                c.setFont(F_MONO, fs)
+                text_w = pdfmetrics.stringWidth(new_txt, font_name, font_size)
             except Exception:
-                c.setFont("Helvetica", fs)
+                font_name = "Times-Roman"  # fallback
+                text_w = pdfmetrics.stringWidth(new_txt, font_name, font_size)
+
+            pad = max(1.2, 0.18 * font_size)
+            rect_w = max((x1 - x0), text_w) + 2 * pad
+            rect_h = (y1 - y0) + 2 * pad
+
+            # белая плашка (слегка шире исходника)
+            c.setFillColor(white); c.setStrokeColor(white)
+            c.rect(x0 - pad, y0 - pad, rect_w, rect_h, fill=1, stroke=0)
+
+            # печатаем по рассчитанному baseline
+            baseline_y = y0 + (y1 - y0) * m["k"]
+            try:
+                c.setFont(font_name, font_size)
+            except Exception:
+                c.setFont("Times-Roman", font_size)
+
             c.setFillColor(black)
-            c.drawString(x0, y0 + (y1 - y0) * 0.10, new_txt)
+            c.drawString(x0, baseline_y, new_txt)
 
         c.showPage()
 
     c.save()
     overlay_buf.seek(0)
 
-    # 3) Сливаем базовый PDF и оверлей
     overlay_reader = PdfReader(overlay_buf)
     writer = PdfWriter()
     for i, base_page in enumerate(reader.pages):
@@ -1036,7 +1125,6 @@ def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float
     writer.write(out)
     out.seek(0)
     return out.read()
-
 # ---------- BOT HANDЛERS ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привет! Выберите действие:", reply_markup=MAIN_KB)
