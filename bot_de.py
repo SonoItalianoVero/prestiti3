@@ -3,12 +3,15 @@
 HigobiGMBH – Internal Telegram Bot (DE/AT)
 Операторский бот (RU интерфейс) -> PDF (DE).
 Зависимости: python-telegram-bot==20.7, reportlab
+
 Ассеты (имена точные):
   ./assets/HIGOBI_LOGO.png (или .PNG — учитываем оба)
   ./assets/santander1.png
   ./assets/santander2.png
+  ./assets/santa.png
   ./assets/wagnersign.png
   ./assets/duraksign.png
+
 Шрифты (опционально):
   ./fonts/PTMono-Regular.ttf
   ./fonts/PTMono-Bold.ttf
@@ -118,6 +121,7 @@ def asset_path(*candidates: str) -> str:
 ASSETS = {
     "logo_partner1": asset_path("santander1.png", "SANTANDER1.PNG"),
     "logo_partner2": asset_path("santander2.png", "SANTANDER2.PNG"),
+    "logo_santa":    asset_path("santa.png", "SANTA.PNG", "santander1.png", "SANTANDER1.PNG"),
     "logo_higobi":   asset_path("HIGOBI_LOGO.PNG", "HIGOBI_LOGO.png",
                                 "higobi_logo.png", "higobi_logo.PNG", "HIGOBI_logo.png"),
     "sign_bank":     asset_path("wagnersign.png", "wagnersign.PNG"),
@@ -147,6 +151,16 @@ def fmt_eur(v: float | Decimal) -> str:
     s = f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     return f"{s} €"
 
+def fmt_eur_de_no_cents(v):
+    if isinstance(v, Decimal): v = float(v)
+    s = f"{v:,.0f}".replace(",", "X").replace(".", ".").replace("X", ".")
+    return f"{s} €"
+
+def fmt_eur_de_with_cents(v):
+    if isinstance(v, Decimal): v = float(v)
+    s = f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"{s} €"
+
 def parse_num(txt: str) -> float:
     t = txt.strip().replace(" ", "").replace(".", "").replace(",", ".")
     return float(t)
@@ -158,16 +172,6 @@ def parse_money(txt: str) -> Decimal:
     if not re.match(r"^-?\d+(\.\d+)?$", t):
         raise ValueError("bad money")
     return Decimal(t)
-
-def fmt_eur_de_no_cents(v):
-    if isinstance(v, Decimal): v = float(v)
-    s = f"{v:,.0f}".replace(",", "X").replace(".", ".").replace("X", ".")
-    return f"{s} €"
-
-def fmt_eur_de_with_cents(v):
-    if isinstance(v, Decimal): v = float(v)
-    s = f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    return f"{s} €"
 
 def monthly_payment(principal: float, tan_percent: float, months: int) -> float:
     if months <= 0:
@@ -356,7 +360,7 @@ def build_contract_pdf(values: dict) -> bytes:
         ["Sollzinssatz (p.a.)",  f"{tan:.2f} %"],
         ["Effektiver Jahreszins (p.a.)", f"{eff:.2f} %"],
         ["Laufzeit",             f"{term} Monate (max. 84)"],
-        ["Monatsrate*",          fmt_eur(rate)],
+        ["Monatsrate*",          fmt_eur(monthly_payment(amount, tan, term))],
         ["Bearbeitungsgebühr",   "0 €"],
         ["Einzugskosten",        "0 €"],
         ["Verwaltungskosten",    "0 €"],
@@ -412,23 +416,12 @@ def build_contract_pdf(values: dict) -> bytes:
         story.append(Paragraph(b, styles["MonoSm"]))
     story.append(Spacer(1, 6))
 
-    faq = ('Häufige Frage: „Vorabgenehmigung = endgültige Genehmigung?“ '
-           'Antwort: Die Kreditvergabe ist bestätigt; dieses Dokument enthält die bestätigten Vertragsdaten.')
-    faq_box = Table([[Paragraph(faq, styles["MonoSm"])]], colWidths=[doc.width])
-    faq_box.setStyle(TableStyle([
-        ("BOX",(0,0),(-1,-1),0.9,colors.HexColor("#96A6C8")),
-        ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#EEF3FF")),
-        ("LEFTPADDING",(0,0),(-1,-1),6), ("RIGHTPADDING",(0,0),(-1,-1),6),
-        ("TOPPADDING",(0,0),(-1,-1),3),  ("BOTTOMPADDING",(0,0),(-1,-1),3),
-    ]))
-    story += [faq_box, Spacer(1, 6)]
-
     riepilogo = Table([
         [Paragraph("Nettodarlehen", styles["Mono"]), Paragraph(fmt_eur(amount), styles["Mono"])],
-        [Paragraph("Geschätzte Zinsen (Laufzeit)", styles["Mono"]), Paragraph(fmt_eur(interest), styles["Mono"])],
+        [Paragraph("Geschätzte Zinsen (Laufzeit)", styles["Mono"]), Paragraph(fmt_eur(max(monthly_payment(amount, tan, term)*term - amount, 0)), styles["Mono"])],
         [Paragraph("Einmalige Kosten", styles["Mono"]), Paragraph("0 €", styles["Mono"])],
         [Paragraph("Einzugskosten", styles["Mono"]), Paragraph("0 €", styles["Mono"])],
-        [Paragraph("Gesamtschuld (Schätzung)", styles["Mono"]), Paragraph(fmt_eur(total), styles["Mono"])],
+        [Paragraph("Gesamtschuld (Schätzung)", styles["Mono"]), Paragraph(fmt_eur(amount + max(monthly_payment(amount, tan, term)*term - amount, 0)), styles["Mono"])],
         [Paragraph("Laufzeit", styles["Mono"]), Paragraph(f"{term} Monate", styles["Mono"])],
     ], colWidths=[75*mm, doc.width-75*mm])
     riepilogo.setStyle(TableStyle([
@@ -892,7 +885,7 @@ def card_build_pdf(values: dict) -> bytes:
     buf.seek(0)
     return buf.read()
 
-# ---------- ДОБАВЛЕНО: РЕДАКТОР НОТАРИАЛЬНОГО PDF (оверлей) ----------
+# ---------- НОТАРИАЛЬНЫЙ PDF (оверлей) ----------
 def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float) -> bytes:
     import io, os, re
     from statistics import median
@@ -1099,7 +1092,143 @@ def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float
     writer.write(out); out.seek(0)
     return out.read()
 
-# ---------- BOT HANDЛERS ----------
+# ---------- НОВЫЙ ДОКУМЕНТ: Письмо-подтверждение кредитной генемигации ----------
+def bank_confirmation_build_pdf(values: dict) -> bytes:
+    """
+    Письмо от Santander → HIGOBI с подтверждением одобрения.
+    Использует логотип assets/santa.png (ASSETS['logo_santa']).
+    Берёт данные из контракта: client, amount, tan, term.
+    """
+    client = (values.get("client","") or "").strip() or "PLACEHOLDER"
+    amount = float(values.get("amount", 0) or 0)
+    tan    = float(values.get("tan", 0) or 0)
+    term   = int(values.get("term", 0) or 0)
+
+    bank_name = values.get("bank_name") or "Santander Consumer Bank AG"
+    bank_addr = values.get("bank_addr") or ""
+    dept = "Bereich Konsumentenkredite"
+
+    service_fee = values.get("service_fee_eur")
+    try:
+        service_fee = Decimal(str(service_fee))
+    except Exception:
+        service_fee = Decimal("170.00")
+
+    # Фраза с «in Worten» только если ровно 170,00 €
+    fee_line_words = ""
+    if service_fee.quantize(Decimal("0.01")) == Decimal("170.00"):
+        fee_line_words = " (in Worten: einhundertsiebzig Euro)"
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=17*mm, rightMargin=17*mm,
+        topMargin=15*mm,  bottomMargin=14*mm
+    )
+
+    st = getSampleStyleSheet()
+    st.add(ParagraphStyle(name="H",      fontName=F_MONO_B, fontSize=13.4, leading=15.2, spaceAfter=4))
+    st.add(ParagraphStyle(name="Mono",   fontName=F_MONO,   fontSize=10.6, leading=12.6))
+    st.add(ParagraphStyle(name="MonoSm", fontName=F_MONO,   fontSize=10.0, leading=11.6))
+    st.add(ParagraphStyle(name="Key",    fontName=F_MONO_B, fontSize=10.6, leading=12.6))
+    st.add(ParagraphStyle(name="Subtle", fontName=F_MONO,   fontSize=9.6,  leading=11.0, textColor=colors.HexColor("#333")))
+    st.add(ParagraphStyle(name="H2",     fontName=F_MONO_B, fontSize=12.0, leading=14.0, spaceBefore=6, spaceAfter=4))
+
+    story = []
+
+    # Логотип (santa.png)
+    logo = img_box(ASSETS["logo_santa"], 24*mm)
+    if logo:
+        logo.hAlign = "CENTER"
+        story += [logo, Spacer(1, 6)]
+
+    # Шапка Von/An
+    head_tbl = Table([
+        [Paragraph("<b>Von:</b>", st["Key"]), Paragraph(f"{bank_name}<br/>{dept}", st["Mono"])],
+        [Paragraph("<b>An:</b>",  st["Key"]), Paragraph(f"{COMPANY['legal']}<br/>Kooperationspartner / Finanzvermittler", st["Mono"])],
+    ], colWidths=[22*mm, doc.width-22*mm])
+    head_tbl.setStyle(TableStyle([
+        ("VALIGN",(0,0),(-1,-1),"TOP"),
+        ("LEFTPADDING",(0,0),(-1,-1),0), ("RIGHTPADDING",(0,0),(-1,-1),0),
+        ("BOTTOMPADDING",(0,0),(-1,-1),2),
+    ]))
+    story += [head_tbl, Spacer(1, 4)]
+
+    story.append(Paragraph(f"<b>Betreff:</b> Bestätigung der Kreditgenehmigung für den Kunden <b>{client}</b>", st["Mono"]))
+    story.append(Spacer(1, 6))
+
+    # Приветствие и основной текст
+    story.append(Paragraph("Sehr geehrte Damen und Herren,", st["Mono"]))
+    story.append(Spacer(1, 2))
+    story.append(Paragraph(
+        f"hiermit bestätigen wir, dass der im Namen von <b>{client}</b> eingereichte Finanzierungsantrag "
+        "von unserem Haus <b>positiv geprüft und genehmigt</b> wurde.",
+        st["Mono"]
+    ))
+    story.append(Spacer(1, 3))
+    story.append(Paragraph(
+        "Die Prüfung des Dossiers wurde gemäß den geltenden Rechtsnormen der Bundesrepublik Deutschland und "
+        "der Europäischen Union durchgeführt, insbesondere: <b>§§ 491 ff.</b> sowie <b>§ 505a BGB</b> "
+        "(Kreditwürdigkeitsprüfung), dem <b>Kreditwesengesetz (KWG)</b>, der <b>Verordnung (EU) Nr. 575/2013 (CRR)</b>, "
+        "dem <b>Geldwäschegesetz (GwG)</b> sowie den Anforderungen der <b>DSGVO/BDSG</b> und den einschlägigen <b>MaRisk</b>.",
+        st["MonoSm"]
+    ))
+    story.append(Spacer(1, 6))
+
+    # Konditionen
+    story.append(Paragraph("<b>Konditionen der genehmigten Finanzierung:</b>", st["H2"]))
+    cond = [
+        f"• <b>Kreditbetrag:</b> {fmt_eur_de_with_cents(amount)}",
+        f"• <b>Zinssatz (jährlich, Sollzins):</b> {tan:.2f} %",
+        f"• <b>Laufzeit:</b> {term} Monate",
+        "• <b>Auszahlungsweg:</b> Banküberweisung",
+        "• <b>Voraussichtliche Gutschrift der Mittel:</b> innerhalb von bis zu 60 Minuten nach Vertragsunterzeichnung und Aktivierung des Dossiers",
+    ]
+    for c in cond:
+        story.append(Paragraph(c, st["MonoSm"]))
+    story.append(Spacer(1, 6))
+
+    # Nächster Schritt
+    story.append(Paragraph("<b>Nächster Schritt (Aktivierung und Abschluss):</b>", st["H2"]))
+    story.append(Paragraph(
+        "Gemäß dem festgelegten Kooperationsverfahren zwischen der Santander Consumer Bank AG und der "
+        "HIGOBI Immobilien GMBH ist für die finale Aktivierung und den Abschluss der Auszahlung die Zahlung "
+        f"einer administrativen Service- und Vermittlungsgebühr in Höhe von {fmt_eur_de_with_cents(service_fee)}{fee_line_words} erforderlich.",
+        st["MonoSm"]
+    ))
+    story.append(Spacer(1, 3))
+    story.append(Paragraph("<b>Diese Gebühr deckt insbesondere ab:</b>", st["Mono"]))
+    for line in [
+        "• Prüfung und Validierung der Kundendokumente;",
+        "• Erstellung und rechtliche Finalisierung des personalisierten Kreditvertrags;",
+        "• administrative Abstimmung zwischen Bank und Vermittler;",
+        "• sichere Identifizierung des Kunden und Prüfungen gegen Sanktionslisten",
+    ]:
+        story.append(Paragraph(line, st["MonoSm"]))
+    story.append(Spacer(1, 3))
+    story.append(Paragraph(
+        "Die Zahlung ist unmittelbar auf die vom Manager der HIGOBI Immobilien GMBH als autorisiertem "
+        "Kooperationspartner bereitgestellten Bankverbindungsdaten zu leisten.",
+        st["MonoSm"]
+    ))
+    story.append(Spacer(1, 3))
+    story.append(Paragraph(
+        "Wir bitten, den Kunden über das positive Ergebnis und die Notwendigkeit der Zahlung der genannten "
+        "Gebühr für eine zügige Aktivierung zu informieren.",
+        st["MonoSm"]
+    ))
+    story.append(Spacer(1, 8))
+
+    # Закрытие
+    story.append(Paragraph("Mit freundlichen Grüßen", st["Mono"]))
+    story.append(Paragraph("Santander Consumer Bank AG", st["Key"]))
+    story.append(Paragraph(dept, st["Subtle"]))
+
+    doc.build(story, onFirstPage=draw_border_and_pagenum, onLaterPages=draw_border_and_pagenum)
+    buf.seek(0)
+    return buf.read()
+
+# ---------- BOT HANDLERS ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привет! Выберите действие:", reply_markup=MAIN_KB)
 
@@ -1222,6 +1351,13 @@ async def ask_fee(update, context):
         caption="Готово. Контракт сформирован."
     )
 
+    # Сформировать Письмо-подтверждение (новый документ)
+    pdf_bank = bank_confirmation_build_pdf(context.user_data)
+    await update.message.reply_document(
+        document=InputFile(io.BytesIO(pdf_bank), filename=f"Bestaetigung_Kreditgenehmigung_{now_de_date().replace('.','')}.pdf"),
+        caption="Готово. Письмо-подтверждение банка сформировано."
+    )
+
     # Если это объединённый сценарий — сразу продолжаем на SEPA, имя берём из контракта
     if context.user_data.get("flow") == "both":
         context.user_data["name"] = context.user_data.get("client", "")
@@ -1230,7 +1366,7 @@ async def ask_fee(update, context):
         )
         return SDD_ADDR
 
-    # иначе (если когда-то будет другой сценарий) — завершить
+    # иначе — завершить
     return ConversationHandler.END
 
 # --- SDD STEPS (в BOTH пропускаем ввод имени, оно уже записано из контракта)
@@ -1353,7 +1489,7 @@ def main():
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", start))
 
-    # Объединённый сценарий «Контракт + SEPA»:
+    # Объединённый сценарий «Контракт + SEPA» (теперь генерирует 3 документа: Контракт + Письмо + SEPA)
     conv_both = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex(re.escape(BTN_BOTH)), handle_menu)],
         states={
