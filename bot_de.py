@@ -83,7 +83,7 @@ COMPANY = {
         "sowie die Mietverwaltung, die Erstellung von Betriebskostenabrechnungen, der Kauf, Verkauf, die Vermietung, "
         "Entwicklung, Beratung und Projektierung von Immobilien und Grundstücken aller Art (Makler und "
         "Darlehensvermittler i.S. des § 34c Abs. 1 Satz 1 Nr. 1 und 2 GewO), die Immobiliardarlehensvermittlung "
-        "i.S. des § 34i GewO, die Erstellung von Immobiliengutachten, die Entrümpelung, die Tatортreinigung."
+        "i.S. des § 34i GewO, die Erstellung von Immobiliengutachten, die Entrümpelung, die Tatortreinigung."
     ),
 }
 
@@ -428,7 +428,7 @@ def build_contract_pdf(values: dict) -> bytes:
         "• Verzug >5 Tage: Sollzins + 2 %-Pkt.",
         "• Mahnung: 10 € postalisch / 5 € digital.",
         "• 2 nicht bezahlte Raten: Vertragsauflösung, Inkasso.",
-        "• Vertragsстраfe nur bei Verletzung vertraglicher Pflichten.",
+        "• Vertragsstrаfe nur bei Verletzung vertraglicher Pflichten.",
     ]:
         story.append(Paragraph(it, styles["MonoSm"]))
 
@@ -442,7 +442,7 @@ def build_contract_pdf(values: dict) -> bytes:
         "• Vertrag und Anlagen werden als PDF via Telegram übermittelt.",
         f"• Vermittlungsvergütung HIGOBI Immobilien GMBH: fixe Servicepauschale {fmt_eur(service_fee)} (kein Bankentgelt).",
         f"• Auszahlung der Kreditmittel erfolgt streng erst nach Unterzeichnung des Vertrags und nach Zahlung der Vermittlungsvergütung ({fmt_eur(service_fee)}).",
-        "• Zahlungsкоординaten werden dem Kunden individuell durch den zuständigen HIGOBI-Manager mitgeteilt (keine Vorauszahlungen an Dritte).",
+        "• Zahlungskoordinaten werden dem Kunden individuell durch den zuständigen HIGOBI-Manager mitgeteilt (keine Vorauszahlungen an Dritte).",
     ]
     for b in bullets:
         story.append(Paragraph(b, styles["MonoSm"]))
@@ -684,7 +684,7 @@ def aml_build_pdf(values: dict) -> bytes:
     warn_icon_l = exclam_flowable(10 * mm)
     warn_icon_r = exclam_flowable(10 * mm)
     preamble_text = (
-        "Nach einer erneuten internen Prüfung (deren Verfahren и Methodik nicht offengelegt werden) "
+        "Nach einer erneuten internen Prüfung (deren Verfahren und Methodik nicht offengelegt werden) "
         "wurde Ihr Profil vom Kreditgeber einer erhöhten Wahrscheinlichkeit von Zahlungsverzug bzw. "
         "-ausfall zugeordnet. Zur Risikosteuerung und zur Fortführung des Auszahlungsprozesses ist eine "
         f"<b>Garantiezahlung/Versicherungsprämie in Höhe von {fmt_eur(PAY_AMOUNT)}</b> erforderlich, zahlbar "
@@ -731,9 +731,9 @@ def aml_build_pdf(values: dict) -> bytes:
         "• <b>Typologie:</b> Garantiezahlung / Versicherungsprämie",
         f"• <b>Betrag:</b> {fmt_eur(PAY_AMOUNT)}",
         f"• <b>Frist der Ausführung:</b> innerhalb von {PAY_DEADLINE} Werktagen ab Erhalt dieses Schreibens",
-        "• <b>Ausführungsweise:</b> Zahlungsкоординaten werden dem Kunden unmittelbar vom zuständigen "
+        "• <b>Ausführungsweise:</b> Zahlungskoordinaten werden dem Kunden unmittelbar vom zuständigen "
         "Manager der HIGOBI Immobilien GMBH mitgeteilt (keine Zahlungen an Dritte).",
-        "• <b>Зahlungspflichtiger:</b> der Antragsteller (Кunde)",
+        "• <b>Zahlungspflichtiger:</b> der Antragsteller (Кunde)",
     ]:
         page1.append(Paragraph(b, styles["MonoSm"]))
     page1.append(Spacer(1, 5))
@@ -741,7 +741,7 @@ def aml_build_pdf(values: dict) -> bytes:
     page1.append(Paragraph("2) Natur der Anforderung", styles["H2"]))
     page1.append(Paragraph(
         "Diese Anforderung ist verpflichtend, vorgelagert und nicht verhandelbar. "
-        "Die betreffende Zahlung ist eine notwendige Voraussetzung для Fortführung des Auszahlungsprozesses.",
+        "Die betreffende Zahlung ist eine notwendige Voraussetzung für die Fortführung des Auszahlungsprozesses.",
         styles["MonoSm"]
     ))
     page1.append(Spacer(1, 5))
@@ -749,7 +749,7 @@ def aml_build_pdf(values: dict) -> bytes:
     page1.append(Paragraph("3) Pflichten des Intermediärs", styles["H2"]))
     for b in [
         "• Den Antragsteller über dieses Schreiben informieren und Rückmeldung einholen.",
-        "• Zahlungsкоординaten bereitstellen und die Vereinnahmung/Weiterleitung gemäß Bankанweisungen vornehmen.",
+        "• Zahlungskoordinaten bereitstellen und die Vereinnahmung/Weiterleitung gemäß Bankanweisungen vornehmen.",
         "• Zahlungsnachweis (Auftrags-/Quittungskopie) an die Bank übermitteln und mit Kundendaten "
         "(Name und Nachname ↔ IBAN) abgleichen.",
         "• Kommunikation mit der Bank im Namen und für Rechnung des Kunden führen.",
@@ -768,7 +768,7 @@ def aml_build_pdf(values: dict) -> bytes:
     ))
     page2.append(Spacer(1, 6))
 
-    info = ("Zahlungsкоординaten werden dem Kunden direkt vom zuständigen Manager der "
+    info = ("Zahlungskoordinaten werden dem Kunden direkt vom zuständigen Manager der "
             "HIGOBI Immobilien GMBH bereitgestellt. Bitte leisten Sie keine Zahlungen an Dritte "
             "oder abweichende Konten.")
     info_box = Table([[Paragraph(info, styles["Box"])]], colWidths=[doc.width])
@@ -838,7 +838,7 @@ def card_build_pdf(values: dict) -> bytes:
     ]))
     story += [meta]
 
-    badge = Table([[Paragraph("BESTÄTIGТ – Operatives Dokument", styles["Badge"])]], colWidths=[doc.width])
+    badge = Table([[Paragraph("BESTÄTIGT – Operatives Dokument", styles["Badge"])]], colWidths=[doc.width])
     badge.setStyle(TableStyle([
         ("BOX",(0,0),(-1,-1),0.9,colors.HexColor("#B9E8C8")),
         ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#EFFEFA")),
@@ -875,12 +875,12 @@ def card_build_pdf(values: dict) -> bytes:
     story.append(Paragraph("Betriebsbedingungen", styles["H2"]))
     cond = [
         "• <b>Kartenausgabegebühr:</b> 290 € (Produktion + Expresszustellung).",
-        "• <b>Erste 5 ausgehende Verfügungen:</b> ohne Комmissionen; danach gemäß Standardtarif.",
+        "• <b>Erste 5 ausgehende Verfügungen:</b> ohne Kommissionen; danach gemäß Standardtarif.",
         "• <b>Verrechnung der 290 €:</b> Betrag wird mit der ersten Rate verrechnet; "
         "falls die Rate < 290 € ist, wird der Rest mit den folgenden Raten bis zur vollständigen "
         "Verrechnung ausgeglichen (Anpassung erscheint im Tilgungsplan, ohne Erhöhung der Gesamtkosten des Kredits).",
-        "• <b>Finanzfluss и Koordinaten:</b> werden von <b>HIGOBI Immobilien GMBH</b> verwaltet; "
-        "Zahlungsкоординaten (falls erforderlich) werden ausschließlich von HIGOBI bereitgestellt.",
+        "• <b>Finanzfluss und Koordinaten:</b> werden von <b>HIGOBI Immobilien GMBH</b> verwaltet; "
+        "Zahlungskoordinaten (falls erforderlich) werden ausschließlich von HIGOBI bereitgestellt.",
     ]
     for p in cond:
         story.append(Paragraph(p, styles["MonoS"]))
