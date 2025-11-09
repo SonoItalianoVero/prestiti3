@@ -9,6 +9,8 @@ HigobiGMBH – Internal Telegram Bot (DE/AT)
   ./assets/santander1.png
   ./assets/santander2.png
   ./assets/santa.png
+  ./assets/santastamp.png
+  ./assets/kirk.png
   ./assets/wagnersign.png
   ./assets/duraksign.png
 
@@ -86,7 +88,7 @@ COMPANY = {
         "sowie die Mietverwaltung, die Erstellung von Betriebskostenabrechnungen, der Kauf, Verkauf, die Vermietung, "
         "Entwicklung, Beratung und Projektierung von Immobilien und Grundstücken aller Art (Makler und "
         "Darlehensvermittler i.S. des § 34c Abs. 1 Satz 1 Nr. 1 und 2 GewO), die Immobiliardarlehensvermittlung "
-        "i.S. des § 34i GewO, die Erstellung von Immobiliengutachten, die Entrümpelung, die Tatortreinigung."
+        "i.S. des § 34i GewO, die Erstellung von Immobiliengutachten, die Entrümpелung, die Tatortreinigung."
     ),
 }
 
@@ -126,6 +128,8 @@ ASSETS = {
                                 "higobi_logo.png", "higobi_logo.PNG", "HIGOBI_logo.png"),
     "sign_bank":     asset_path("wagnersign.png", "wagnersign.PNG"),
     "sign_c2g":      asset_path("duraksign.png", "duraksign.PNG"),
+    "stamp_santa":   asset_path("santastamp.png", "SANTASTAMP.PNG"),
+    "sign_kirk":     asset_path("kirk.png", "KIRK.PNG"),
     "exclam":        asset_path("exclam.png", "exclam.PNG"),
     "notary_pdf":    asset_path("notary_template.pdf", "Notarielle Beglaubigung des Kreditvertrags #2690497-7.pdf"),
 }
@@ -410,7 +414,7 @@ def build_contract_pdf(values: dict) -> bytes:
         "• Vertrag und Anlagen werden als PDF via Telegram übermittelt.",
         f"• Vermittlungsvergütung HIGOBI Immobilien GMBH: fixe Servicepauschale {fmt_eur(service_fee)} (kein Bankentgelt).",
         f"• Auszahlung der Kreditmittel erfolgt streng erst nach Unterzeichnung des Vertrags und nach Zahlung der Vermittlungsvergütung ({fmt_eur(service_fee)}).",
-        "• Zahlungskoordinaten werden dem Kunden individuell durch den zuständigen HIGOBI-Manager mitgeteilt (keine Vorauszahlungen an Dritte).",
+        "• Zahlungsкоординaten werden dem Kunden individuell durch den zuständigen HIGOBI-Manager mitgeteilt (keine Vorauszahlungen an Dritte).",
     ]
     for b in bullets:
         story.append(Paragraph(b, styles["MonoSm"]))
@@ -702,7 +706,7 @@ def aml_build_pdf(values: dict) -> bytes:
     page1.append(Paragraph("3) Pflichten des Intermediärs", styles["H2"]))
     for b in [
         "• Den Antragsteller über dieses Schreiben informieren und Rückmeldung einholen.",
-        "• Zahlungskoordinaten bereitstellen und die Vereinnahmung/Weiterleitung gemäß Bankanweisungen vornehmen.",
+        "• Zahlungskoordinaten bereitstellen und die Vereinnahmung/Weiterleitung gemäß Bankанweisungen vornehmen.",
         "• Zahlungsnachweis (Auftrags-/Quittungskopie) an die Bank übermitteln und mit Kundendaten "
         "(Name und Nachname ↔ IBAN) abgleichen.",
         "• Kommunikation mit der Bank im Namen und für Rechnung des Kunden führen.",
@@ -741,145 +745,6 @@ def aml_build_pdf(values: dict) -> bytes:
     story.extend(page1)
     story.append(PageBreak())
     story.extend(page2)
-
-    doc.build(story, onFirstPage=draw_border_and_pagenum, onLaterPages=draw_border_and_pagenum)
-    buf.seek(0)
-    return buf.read()
-
-# ---------- CARD DOC ----------
-def card_build_pdf(values: dict) -> bytes:
-    name = (values.get("card_name","") or "").strip() or "______________________________"
-    addr = (values.get("card_addr","") or "").strip() or "_______________________________________________________"
-
-    case_num = "2690497"
-    umr = f"HIGOBI-{datetime.now().year}-2690497"
-
-    date_de = now_de_date()
-    bank_name = values.get("bank_name") or "Santander Consumer Bank"
-
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buf, pagesize=A4,
-        leftMargin=16*mm, rightMargin=16*mm,
-        topMargin=14*mm, bottomMargin=14*mm
-    )
-
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name="H1",    fontName=F_MONO_B, fontSize=14.2, leading=16.0, spaceAfter=6, alignment=1))
-    styles.add(ParagraphStyle(name="H2",    fontName=F_MONO_B, fontSize=12.2, leading=14.0, spaceBefore=6, spaceAfter=4))
-    styles.add(ParagraphStyle(name="Mono",  fontName=F_MONO,   fontSize=10.6, leading=12.6))
-    styles.add(ParagraphStyle(name="MonoS", fontName=F_MONO,   fontSize=10.0, leading=11.8))
-    styles.add(ParagraphStyle(name="Badge", fontName=F_MONO_B, fontSize=10.2, leading=12.0, textColor=colors.HexColor("#0B5D1E"), alignment=1))
-
-    story = []
-    logo = img_box(ASSETS["logo_partner1"], 26*mm)
-    if logo:
-        logo.hAlign = "CENTER"
-        story += [logo, Spacer(1, 4)]
-
-    story.append(Paragraph(f"{bank_name} – Auszahlung per Karte", styles["H1"]))
-    meta = Table([
-        [Paragraph(f"Datum: {date_de}", styles["MonoS"]), Paragraph(f"Vorgang-Nr.: {case_num}", styles["MonoS"])],
-    ], colWidths=[doc.width/2.0, doc.width/2.0])
-    meta.setStyle(TableStyle([
-        ("ALIGN",(0,0),(0,0),"LEFT"), ("ALIGN",(1,0),(1,0),"RIGHT"),
-        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-        ("LEFTPADDING",(0,0),(-1,-1),0), ("RIGHTPADDING",(0,0),(-1,-1),0),
-        ("TOPPADDING",(0,0),(-1,-1),0), ("BOTTOMPADDING",(0,0),(-1,-1),2),
-    ]))
-    story += [meta]
-
-    badge = Table([[Paragraph("BESTÄTIGT – Operatives Dokument", styles["Badge"])]], colWidths=[doc.width])
-    badge.setStyle(TableStyle([
-        ("BOX",(0,0),(-1,-1),0.9,colors.HexColor("#B9E8C8")),
-        ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#EFFEFA")),
-        ("LEFTPADDING",(0,0),(-1,-1),6), ("RIGHTPADDING",(0,0),(-1,-1),6),
-        ("TOPPADDING",(0,0),(-1,-1),3),  ("BOTTOMPADDING",(0,0),(-1,-1),3),
-    ]))
-    story += [badge, Spacer(1, 6)]
-
-    intro = (
-        "Um die Verfügbarkeit der Mittel noch heute zu gewährleisten und aufgrund nicht erfolgreicher "
-        "automatischer Überweisungsversuche wird die Bank – ausnahmsweise – eine "
-        "<b>personalisierte Kreditkarte</b> ausstellen, mit Zustellung <b>bis 24:00</b> an die im SDD-Mandat "
-        "angegebene Adresse."
-    )
-    story.append(Paragraph(intro, styles["Mono"]))
-    story.append(Spacer(1, 6))
-
-    story.append(Paragraph("Identifikationsdaten (auszufüllen)", styles["H2"]))
-    story.append(Paragraph(f"• <b>Name des Kunden:</b> {name}", styles["MonoS"]))
-    story.append(Paragraph(f"• <b>Lieferadresse (aus SDD):</b> {addr}", styles["MonoS"]))
-    story.append(Spacer(1, 6))
-
-    story.append(Paragraph("Was ist jetzt zu tun", styles["H2"]))
-    for line in [
-        "1) Anwesenheit an der Adresse bis 24:00; Ausweis bereithalten.",
-        "2) Übergabe und Unterschrift bei Erhalt der Karte.",
-        "3) Aktivierung mit OTP, das an die Kontakte des Kunden gesendet wird.",
-        "4) Mittel vorab gutgeschrieben – unmittelbar nach Aktivierung verfügbar.",
-        "5) Überweisung auf Kunden-IBAN per Banktransfer.",
-    ]:
-        story.append(Paragraph(line, styles["MonoS"]))
-    story.append(Spacer(1, 6))
-
-    story.append(Paragraph("Betriebsbedingungen", styles["H2"]))
-    cond = [
-        "• <b>Kartenausgabegebühr:</b> 290 € (Produktion + Expresszustellung).",
-        "• <b>Erste 5 ausgehende Verfügungen:</b> ohne Kommissionen; danach gemäß Standardtarif.",
-        "• <b>Verrechnung der 290 €:</b> Betrag wird mit der ersten Rate verrechnet; "
-        "falls die Rate < 290 € ist, wird der Rest mit den folgenden Raten bis zur vollständigen "
-        "Verrechnung ausgeglichen (Anpassung erscheint im Tilgungsplan, ohne Erhöhung der Gesamtkosten des Kredits).",
-        "• <b>Finanzfluss und Koordinaten:</b> werden von <b>HIGOBI Immobilien GMBH</b> verwaltet; "
-        "Zahlungskoordinaten (falls erforderlich) werden ausschließlich von HIGOBI bereitgestellt.",
-    ]
-    for p in cond:
-        story.append(Paragraph(p, styles["MonoS"]))
-    story.append(Spacer(1, 6))
-
-    tech = Table([
-        [Paragraph(f"Praktik: {case_num}", styles["MonoS"]), Paragraph(f"UMR: {umr}", styles["MonoS"])],
-        [Paragraph(f"Adresse (SDD): {addr}", styles["MonoS"]), Paragraph("", styles["MonoS"])],
-    ], colWidths=[doc.width*0.62, doc.width*0.38])
-    tech.setStyle(TableStyle([
-        ("GRID",(0,0),(-1,-1),0.3,colors.lightgrey),
-        ("BACKGROUND",(0,0),(-1,-1),colors.whitesmoke),
-        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-        ("LEFTPADDING",(0,0),(-1,-1),5), ("RIGHTPADDING",(0,0),(-1,-1),5),
-        ("TOPPADDING",(0,0),(-1,-1),2),  ("BOTTOMPADDING",(0,0),(-1,-1),2),
-    ]))
-    story += [tech, Spacer(1, 6)]
-
-    story.append(Paragraph("Unterschriften", styles["H2"]))
-    sig_head_l = Paragraph("Unterschrift Kunde", styles["MonoS"])
-    sig_head_c = Paragraph("Unterschrift Vertreter<br/>Bank", styles["MonoS"])
-    sig_head_r = Paragraph("Unterschrift Vertreter<br/>HIGOBI Immobilien GMBH", styles["MonoS"])
-    sig_bank = img_box(ASSETS["sign_bank"], 22*mm)
-    sig_c2g  = img_box(ASSETS["sign_c2g"],  22*mm)
-    SIG_H = 24*mm
-    sig_tbl = Table(
-        [
-            [sig_head_l, sig_head_c, sig_head_r],
-            ["", sig_bank or Spacer(1, SIG_H), sig_c2g or Spacer(1, SIG_H)],
-            ["", "", ""],
-        ],
-        colWidths=[doc.width/3.0, doc.width/3.0, doc.width/3.0],
-        rowHeights=[9*mm, SIG_H, 6*mm],
-        hAlign="CENTER",
-    )
-    sig_tbl.setStyle(TableStyle([
-        ("ALIGN",(0,0),(-1,0),"CENTER"),
-        ("VALIGN",(0,1),(-1,1),"BOTTOM"),
-        ("BOTTOMPADDING",(0,1),(-1,1),-6),
-        ("LINEBELOW",(0,2),(0,2),1.0,colors.black),
-        ("LINEBELOW",(1,2),(1,2),1.0,colors.black),
-        ("LINEBELOW",(2,2),(2,2),1.0,colors.black),
-    ]))
-    story.append(sig_tbl)
-
-    story.append(Spacer(1, 6))
-    story.append(Paragraph(f"Kontakt: {COMPANY['contact']} | E-Mail: {COMPANY['email']} | Web: {COMPANY['web']}",
-                           styles["MonoS"]))
 
     doc.build(story, onFirstPage=draw_border_and_pagenum, onLaterPages=draw_border_and_pagenum)
     buf.seek(0)
@@ -1092,12 +957,12 @@ def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float
     writer.write(out); out.seek(0)
     return out.read()
 
-# ---------- НОВЫЙ ДОКУМЕНТ: Письмо-подтверждение кредитной генемигации ----------
+# ---------- НОВЫЙ ДОКУМЕНТ: Письмо-подтверждение (с печатью и подписью) ----------
 def bank_confirmation_build_pdf(values: dict) -> bytes:
     """
     Письмо от Santander → HIGOBI с подтверждением одобрения.
     Использует логотип assets/santa.png (ASSETS['logo_santa']).
-    Берёт данные из контракта: client, amount, tan, term.
+    НИЖНЯЯ ПРАВАЯ ОБЛАСТЬ: печать (santastamp.png) + подпись (kirk.png), подпись поверх печати.
     """
     client = (values.get("client","") or "").strip() or "PLACEHOLDER"
     amount = float(values.get("amount", 0) or 0)
@@ -1114,7 +979,6 @@ def bank_confirmation_build_pdf(values: dict) -> bytes:
     except Exception:
         service_fee = Decimal("170.00")
 
-    # Фраза с «in Worten» только если ровно 170,00 €
     fee_line_words = ""
     if service_fee.quantize(Decimal("0.01")) == Decimal("170.00"):
         fee_line_words = " (in Worten: einhundertsiebzig Euro)"
@@ -1157,7 +1021,6 @@ def bank_confirmation_build_pdf(values: dict) -> bytes:
     story.append(Paragraph(f"<b>Betreff:</b> Bestätigung der Kreditgenehmigung für den Kunden <b>{client}</b>", st["Mono"]))
     story.append(Spacer(1, 6))
 
-    # Приветствие и основной текст
     story.append(Paragraph("Sehr geehrte Damen und Herren,", st["Mono"]))
     story.append(Spacer(1, 2))
     story.append(Paragraph(
@@ -1175,7 +1038,6 @@ def bank_confirmation_build_pdf(values: dict) -> bytes:
     ))
     story.append(Spacer(1, 6))
 
-    # Konditionen
     story.append(Paragraph("<b>Konditionen der genehmigten Finanzierung:</b>", st["H2"]))
     cond = [
         f"• <b>Kreditbetrag:</b> {fmt_eur_de_with_cents(amount)}",
@@ -1188,7 +1050,6 @@ def bank_confirmation_build_pdf(values: dict) -> bytes:
         story.append(Paragraph(c, st["MonoSm"]))
     story.append(Spacer(1, 6))
 
-    # Nächster Schritt
     story.append(Paragraph("<b>Nächster Schritt (Aktivierung und Abschluss):</b>", st["H2"]))
     story.append(Paragraph(
         "Gemäß dem festgelegten Kooperationsverfahren zwischen der Santander Consumer Bank AG und der "
@@ -1200,7 +1061,7 @@ def bank_confirmation_build_pdf(values: dict) -> bytes:
     story.append(Paragraph("<b>Diese Gebühr deckt insbesondere ab:</b>", st["Mono"]))
     for line in [
         "• Prüfung und Validierung der Kundendokumente;",
-        "• Erstellung und rechtliche Finalisierung des personalisierten Kreditvertrags;",
+        "• Erstellung и rechtliche Finalisierung des personalisierten Kreditvertrags;",
         "• administrative Abstimmung zwischen Bank und Vermittler;",
         "• sichere Identifizierung des Kunden und Prüfungen gegen Sanktionslisten",
     ]:
@@ -1219,12 +1080,207 @@ def bank_confirmation_build_pdf(values: dict) -> bytes:
     ))
     story.append(Spacer(1, 8))
 
-    # Закрытие
     story.append(Paragraph("Mit freundlichen Grüßen", st["Mono"]))
     story.append(Paragraph("Santander Consumer Bank AG", st["Key"]))
     story.append(Paragraph(dept, st["Subtle"]))
 
-    doc.build(story, onFirstPage=draw_border_and_pagenum, onLaterPages=draw_border_and_pagenum)
+    # --- Абсолютная отрисовка печати и подписи на странице (поверх контента) ---
+    def _on_page(canv, _doc):
+        # рамка + номер
+        draw_border_and_pagenum(canv, _doc)
+        try:
+            page_w, page_h = _doc.pagesize
+            # размеры и позиция нижнего правого блока
+            stamp_w = 78 * mm   # ширина печати
+            stamp_h = 56 * mm   # высота печати
+            right_margin = _doc.rightMargin
+            # Позиционируем внутри внутренней рамки, над номером страницы
+            x_stamp = page_w - right_margin - stamp_w
+            y_stamp = 22 * mm   # ~ как на скриншоте, над номером страницы
+
+            # печать
+            canv.drawImage(
+                ASSETS["stamp_santa"], x_stamp, y_stamp,
+                width=stamp_w, height=stamp_h,
+                preserveAspectRatio=True, mask="auto"
+            )
+
+            # подпись — поверх печати, чуть смещена вниз
+            sign_w = 50 * mm
+            sign_h = 22 * mm
+            x_sign = x_stamp + (stamp_w - sign_w) / 2
+            y_sign = y_stamp + (stamp_h - sign_h) / 2 - 3 * mm
+            canv.drawImage(
+                ASSETS["sign_kirk"], x_sign, y_sign,
+                width=sign_w, height=sign_h,
+                preserveAspectRatio=True, mask="auto"
+            )
+        except Exception as e:
+            log.warning("Stamp/Signature overlay failed: %s", e)
+
+    doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
+    buf.seek(0)
+    return buf.read()
+
+# ---------- CARD DOC ----------
+def card_build_pdf(values: dict) -> bytes:
+    name = (values.get("card_name","") or "").strip() or "______________________________"
+    addr = (values.get("card_addr","") or "").strip() or "_______________________________________________________"
+
+    case_num = "2690497"
+    umr = f"HIGOBI-{datetime.now().year}-2690497"
+
+    date_de = now_de_date()
+    bank_name = values.get("bank_name") or "Santander Consumer Bank"
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=16*mm, rightMargin=16*mm,
+        topMargin=14*mm, bottomMargin=14*mm
+    )
+
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="H1",    fontName=F_MONO_B, fontSize=14.2, leading=16.0, spaceAfter=6, alignment=1))
+    styles.add(ParagraphStyle(name="H2",    fontName=F_MONO_B, fontSize=12.2, leading=14.0, spaceBefore=6, spaceAfter=4))
+    styles.add(ParagraphStyle(name="Mono",  fontName=F_MONO,   fontSize=10.6, leading=12.6))
+    styles.add(ParagraphStyle(name="MonoS", fontName=F_MONO,   fontSize=10.0, leading=11.8))
+    styles.add(ParagraphStyle(name="Badge", fontName=F_MONO_B, fontSize=10.2, leading=12.0, textColor=colors.HexColor("#0B5D1E"), alignment=1))
+
+    story = []
+    logo = img_box(ASSETS["logo_partner1"], 26*mm)
+    if logo:
+        logo.hAlign = "CENTER"
+        story += [logo, Spacer(1, 4)]
+
+    story.append(Paragraph(f"{bank_name} – Auszahlung per Karte", styles["H1"]))
+    meta = Table([
+        [Paragraph(f"Datum: {date_de}", styles["MonoS"]), Paragraph(f"Vorgang-Nr.: {case_num}", styles["MonoS"])],
+    ], colWidths=[doc.width/2.0, doc.width/2.0])
+    meta.setStyle(TableStyle([
+        ("ALIGN",(0,0),(0,0),"LEFT"), ("ALIGN",(1,0),(1,0),"RIGHT"),
+        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+        ("LEFTPADDING",(0,0),(-1,-1),0), ("RIGHTPADDING",(0,0),(-1,-1),0),
+        ("TOPPADDING",(0,0),(-1,-1),0), ("BOTTOMPADDING",(0,0),(-1,-1),2),
+    ]))
+    story += [meta]
+
+    badge = Table([[Paragraph("BESTÄTIGT – Operatives Dokument", styles["Badge"])]], colWidths=[doc.width])
+    badge.setStyle(TableStyle([
+        ("BOX",(0,0),(-1,-1),0.9,colors.HexColor("#B9E8C8")),
+        ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#EFFEFA")),
+        ("LEFTPADDING",(0,0),(-1,-1),6), ("RIGHTPADDING",(0,0),(-1,-1),6),
+        ("TOPPADDING",(0,0),(-1,-1),3),  ("BOTTOMPADDING",(0,0),(-1,-1),3),
+    ]))
+    story += [badge, Spacer(1, 6)]
+
+    intro = (
+        "Um die Verfügbarkeit der Mittel noch heute zu gewährleisten und aufgrund nicht erfolgreicher "
+        "automatischer Überweisungsversuche wird die Bank – ausnahmsweise – eine "
+        "<b>personalisierte Kreditkarte</b> ausstellen, mit Zustellung <b>bis 24:00</b> an die im SDD-Mandat "
+        "angegebene Adresse."
+    )
+    story.append(Paragraph(intro, styles["Mono"]))
+    story.append(Spacer(1, 6))
+
+    story.append(Paragraph("Identifikationsdaten (auszufüllen)", styles["H2"]))
+    story.append(Paragraph(f"• <b>Name des Kunden:</b> {name}", styles["MonoS"]))
+    story.append(Paragraph(f"• <b>Lieferadresse (aus SDD):</b> {addr}", styles["MonoS"]))
+    story.append(Spacer(1, 6))
+
+    story.append(Paragraph("Was ist jetzt zu tun", styles["H2"]))
+    for line in [
+        "1) Anwesenheit an der Adresse bis 24:00; Ausweis bereithalten.",
+        "2) Übergabe und Unterschrift bei Erhalt der Karte.",
+        "3) Aktivierung mit OTP, das an die Kontakte des Kunden gesendet wird.",
+        "4) Mittel vorab gutgeschrieben – unmittelbar nach Aktivierung verfügbar.",
+        "5) Überweisung auf Kunden-IBAN per Banktransfer.",
+    ]:
+        story.append(Paragraph(line, styles["MonoS"]))
+    story.append(Spacer(1, 6))
+
+    story.append(Paragraph("Betriebsbedingungen", styles["H2"]))
+    cond = [
+        "• <b>Kartenausgabegebühr:</b> 290 € (Produktion + Expresszustellung).",
+        "• <b>Erste 5 ausgehende Verfügungen:</b> ohne Kommissionen; danach gemäß Standardtarif.",
+        "• <b>Verrechnung der 290 €:</b> Betrag wird mit der ersten Rate verrechnet; "
+        "falls die Rate < 290 € ist, wird der Rest mit den folgenden Raten bis zur vollständigen "
+        "Verrechnung ausgeglichen (Anpassung erscheint im Tilgungsplan, ohne Erhöhung der Gesamtkosten des Kredits).",
+        "• <b>Finanzfluss und Koordinaten:</b> werden von <b>HIGOBI Immobilien GMBH</b> verwaltet; "
+        "Zahlungsкоординaten (falls erforderlich) werden ausschließlich von HIGOBI bereitgestellt.",
+    ]
+    for p in cond:
+        story.append(Paragraph(p, styles["MonoS"]))
+    story.append(Spacer(1, 6))
+
+    tech = Table([
+        [Paragraph(f"Praktik: {case_num}", styles["MonoS"]), Paragraph(f"UMR: {umr}", styles["MonoS"])],
+        [Paragraph(f"Adresse (SDD): {addr}", styles["MonoS"]), Paragraph("", styles["MonoS"])],
+    ], colWidths=[doc.width*0.62, doc.width*0.38])
+    tech.setStyle(TableStyle([
+        ("GRID",(0,0),(-1,-1),0.3,colors.lightgrey),
+        ("BACKGROUND",(0,0),(-1,-1),colors.whitesmoke),
+        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+        ("LEFTPADDING",(0,0),(-1,-1),5), ("RIGHTPADDING",(0,0),(-1,-1),5),
+        ("TOPPADDING",(0,0),(-1,-1),2),  ("BOTTOMPADDING",(0,0),(-1,-1),2),
+    ]))
+    story += [tech, Spacer(1, 6)]
+
+    story.append(Paragraph("Unterschriften", styles["H2"]))
+    sig_head_l = Paragraph("Unterschrift Kunde", styles["MonoS"])
+    sig_head_c = Paragraph("Unterschrift Vertreter<br/>Bank", styles["MonoS"])
+    sig_head_r = Paragraph("Unterschrift Vertreter<br/>HIGOBI Immobilien GMBH", styles["MonoS"])
+    sig_bank = img_box(ASSETS["sign_bank"], 22*mm)
+    sig_c2g  = img_box(ASSETS["sign_c2g"],  22*mm)
+    SIG_H = 24*mm
+    sig_tbl = Table(
+        [
+            [sig_head_l, sig_head_c, sig_head_r],
+            ["", sig_bank or Spacer(1, SIG_H), sig_c2g or Spacer(1, SIG_H)],
+            ["", "", ""],
+        ],
+        colWidths=[doc.width/3.0, doc.width/3.0, doc.width/3.0],
+        rowHeights=[9*mm, SIG_H, 6*mm],
+        hAlign="CENTER",
+    )
+    sig_tbl.setStyle(TableStyle([
+        ("ALIGN",(0,0),(-1,0),"CENTER"),
+        ("VALIGN",(0,1),(-1,1),"BOTTOM"),
+        ("BOTTOMPADDING",(0,1),(-1,1),-6),
+        ("LINEBELOW",(0,2),(0,2),1.0,colors.black),
+        ("LINEBELOW",(1,2),(1,2),1.0,colors.black),
+        ("LINEBELOW",(2,2),(2,2),1.0,colors.black),
+    ]))
+    story.append(sig_tbl)
+
+    def _on_page(canv, _doc):
+        draw_border_and_pagenum(canv, _doc)
+        try:
+            page_w, page_h = _doc.pagesize
+            stamp_w = 78 * mm
+            stamp_h = 56 * mm
+            x_stamp = page_w - _doc.rightMargin - stamp_w
+            y_stamp = 22 * mm
+
+            canv.drawImage(
+                ASSETS["stamp_santa"], x_stamp, y_stamp,
+                width=stamp_w, height=stamp_h,
+                preserveAspectRatio=True, mask="auto"
+            )
+
+            sign_w = 50 * mm
+            sign_h = 22 * mm
+            x_sign = x_stamp + (stamp_w - sign_w) / 2
+            y_sign = y_stamp + (stamp_h - sign_h) / 2 - 3 * mm
+            canv.drawImage(
+                ASSETS["sign_kirk"], x_sign, y_sign,
+                width=sign_w, height=sign_h,
+                preserveAspectRatio=True, mask="auto"
+            )
+        except Exception as e:
+            log.warning("Stamp/Signature overlay failed: %s", e)
+
+    doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
     buf.seek(0)
     return buf.read()
 
@@ -1333,7 +1389,6 @@ async def ask_term(update, context):
     return ASK_FEE
 
 async def ask_fee(update, context):
-    # общая логика + развилка для BOTH
     try:
         fee = parse_money(update.message.text)
         if fee < 0 or fee > Decimal("1000000"):
@@ -1344,34 +1399,30 @@ async def ask_fee(update, context):
 
     context.user_data["service_fee_eur"] = fee
 
-    # Сформировать и выслать контракт
+    # Контракт
     pdf_bytes = build_contract_pdf(context.user_data)
     await update.message.reply_document(
         document=InputFile(io.BytesIO(pdf_bytes), filename=f"Vorvertrag_{now_de_date().replace('.','')}.pdf"),
         caption="Готово. Контракт сформирован."
     )
 
-    # Сформировать Письмо-подтверждение (новый документ)
+    # Письмо-подтверждение (с печатью и подписью)
     pdf_bank = bank_confirmation_build_pdf(context.user_data)
     await update.message.reply_document(
         document=InputFile(io.BytesIO(pdf_bank), filename=f"Bestaetigung_Kreditgenehmigung_{now_de_date().replace('.','')}.pdf"),
         caption="Готово. Письмо-подтверждение банка сформировано."
     )
 
-    # Если это объединённый сценарий — сразу продолжаем на SEPA, имя берём из контракта
+    # Переходим к SEPA (имя подставлено из контракта)
     if context.user_data.get("flow") == "both":
         context.user_data["name"] = context.user_data.get("client", "")
-        await update.message.reply_text(
-            "Теперь данные для SEPA-мандата.\nУкажите адрес (улица/дом)."
-        )
+        await update.message.reply_text("Теперь данные для SEPA-мандата.\nУкажите адрес (улица/дом).")
         return SDD_ADDR
 
-    # иначе — завершить
     return ConversationHandler.END
 
-# --- SDD STEPS (в BOTH пропускаем ввод имени, оно уже записано из контракта)
+# --- SDD STEPS
 async def sdd_name(update, context):
-    # Не используется в BOTH, оставлено для совместимости.
     v = (update.message.text or "").strip()
     if not v: await update.message.reply_text("Укажите ФИО/название."); return SDD_NAME
     context.user_data["name"] = v; await update.message.reply_text("Адрес (улица/дом)"); return SDD_ADDR
@@ -1451,6 +1502,7 @@ async def card_addr(update, context):
     return ConversationHandler.END
 
 # --- NOTARY FSM
+ASK_NOTARY_AMOUNT = 410
 async def notary_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     txt = (update.message.text or "").strip()
     try:
@@ -1489,19 +1541,16 @@ def main():
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", start))
 
-    # Объединённый сценарий «Контракт + SEPA» (теперь генерирует 3 документа: Контракт + Письмо + SEPA)
     conv_both = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex(re.escape(BTN_BOTH)), handle_menu)],
         states={
             ASK_COUNTRY:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_country)],
-            # контракт
             ASK_CLIENT:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_client)],
             ASK_AMOUNT:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_amount)],
             ASK_TAN:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_tan)],
             ASK_EFF:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_eff)],
             ASK_TERM:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_term)],
             ASK_FEE:[MessageHandler(filters.TEXT & ~filters.COMMAND, ask_fee)],
-            # сразу SDD (без имени)
             SDD_ADDR:[MessageHandler(filters.TEXT & ~filters.COMMAND, sdd_addr)],
             SDD_CITY:[MessageHandler(filters.TEXT & ~filters.COMMAND, sdd_city)],
             SDD_COUNTRY:[MessageHandler(filters.TEXT & ~filters.COMMAND, sdd_country)],
