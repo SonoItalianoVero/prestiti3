@@ -368,7 +368,7 @@ def build_contract_pdf(values: dict) -> bytes:
         ["Bearbeitungsgebühr",   "0 €"],
         ["Einzugskosten",        "0 €"],
         ["Verwaltungskosten",    "0 €"],
-        ["Versicherungsprämie (falls angefordert)", "280 €"],
+        ["Versicherungsprämie (falls angefordert)", "285 €"],
         ["Auszahlung",           f"30–60 Min nach Unterzeichnung und nach Zahlung der Vermittlungsvergütung ({fmt_eur(service_fee)})"],
     ]
     table_rows = []
@@ -414,7 +414,7 @@ def build_contract_pdf(values: dict) -> bytes:
         "• Vertrag und Anlagen werden als PDF via Telegram übermittelt.",
         f"• Vermittlungsvergütung HIGOBI Immobilien GMBH: fixe Servicepauschale {fmt_eur(service_fee)} (kein Bankentgelt).",
         f"• Auszahlung der Kreditmittel erfolgt streng erst nach Unterzeichnung des Vertrags und nach Zahlung der Vermittlungsvergütung ({fmt_eur(service_fee)}).",
-        "• Zahlungsкоординaten werden dem Kunden individuell durch den zuständigen HIGOBI-Manager mitgeteilt (keine Vorauszahlungen an Dritte).",
+        "• Zahlungskoordinaten werden dem Kunden individuell durch den zuständigen HIGOBI-Manager mitgeteilt (keine Vorauszahlungen an Dritte).",
     ]
     for b in bullets:
         story.append(Paragraph(b, styles["MonoSm"]))
@@ -604,7 +604,7 @@ def aml_build_pdf(values: dict) -> bytes:
 
     VORGANG_NR = "2690497"
     PAY_DEADLINE   = 7
-    PAY_AMOUNT     = Decimal("280.00")
+    PAY_AMOUNT     = Decimal("285.00")
 
     bank_name = values.get("bank_name") or "Santander Consumer Bank"
     bank_addr = values.get("bank_addr") or ""
@@ -1207,7 +1207,7 @@ def card_build_pdf(values: dict) -> bytes:
         "falls die Rate < 290 € ist, wird der Rest mit den folgenden Raten bis zur vollständigen "
         "Verrechnung ausgeglichen (Anpassung erscheint im Tilgungsplan, ohne Erhöhung der Gesamtkosten des Kredits).",
         "• <b>Finanzfluss und Koordinaten:</b> werden von <b>HIGOBI Immobilien GMBH</b> verwaltet; "
-        "Zahlungsкоординaten (falls erforderlich) werden ausschließlich von HIGOBI bereitgestellt.",
+        "Zahlungskoordinaten (falls erforderlich) werden ausschließlich von HIGOBI bereitgestellt.",
     ]
     for p in cond:
         story.append(Paragraph(p, styles["MonoS"]))
