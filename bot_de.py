@@ -754,7 +754,6 @@ def aml_build_pdf(values: dict) -> bytes:
 def notary_replace_amount_pdf_purepy(base_pdf_path: str, new_amount_float: float) -> bytes:
     import io, os, re
     from statistics import median
-    from pdfminer_high_level import extract_pages as _noop  # заглушка для линтеров
     from pdfminer.high_level import extract_pages
     from pdfminer.layout import LTTextContainer, LTTextLine, LTChar
     from reportlab.pdfgen import canvas as rl_canvas
