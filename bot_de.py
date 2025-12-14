@@ -706,7 +706,7 @@ def aml_build_pdf(values: dict) -> bytes:
     page1.append(Paragraph("3) Pflichten des Intermediärs", styles["H2"]))
     for b in [
         "• Den Antragsteller über dieses Schreiben informieren und Rückmeldung einholen.",
-        "• Zahlungskoordinaten bereitstellen und die Vereinnahmung/Weiterleitung gemäß Bankанweisungen vornehmen.",
+        "• Zahlungskoordinaten bereitstellen und die Vereinnahmung/Weiterleitung gemäß Bankanweisungen vornehmen.",
         "• Zahlungsnachweis (Auftrags-/Quittungskopie) an die Bank übermitteln und mit Kundendaten "
         "(Name und Nachname ↔ IBAN) abgleichen.",
         "• Kommunikation mit der Bank im Namen und für Rechnung des Kunden führen.",
