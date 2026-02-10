@@ -82,7 +82,7 @@ COMPANY = {
     "rep":   "",
     "contact": "Telegram @higobi_de_at_bot",
     "email": "higobikontakt@inbox.eu",
-    "web": "higobi-gmbh.de",
+    "web": "higogmbh.de",
     "business_scope": (
         "Die Verwaltung von Grundbesitz aller Art einschließlich der Tätigkeit als Verwalter nach § 26a WEG "
         "sowie die Mietverwaltung, die Erstellung von Betriebskostenabrechnungen, der Kauf, Verkauf, die Vermietung, "
