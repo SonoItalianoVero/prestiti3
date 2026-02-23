@@ -1,0 +1,15 @@
+[phases.setup]
+nixPkgs = [
+    "...",
+    "pango",
+    "cairo",
+    "glib",
+    "fontconfig",
+    "libffi"
+]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+[start]
+cmd = "python bot_de.py"

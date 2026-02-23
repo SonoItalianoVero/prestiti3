@@ -1,23 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-HigobiGMBH – Internal Telegram Bot (DE/AT)
-Операторский бот (RU интерфейс) -> PDF (DE).
-Зависимости: python-telegram-bot==20.7, reportlab
-
-Ассеты (имена точные):
-  ./assets/HIGOBI_LOGO.png (или .PNG — учитываем оба)
-  ./assets/santander1.png
-  ./assets/santander2.png
-  ./assets/santa.png
-  ./assets/santastamp.png
-  ./assets/kirk.png
-  ./assets/wagnersign.png
-  ./assets/duraksign.png
-
-Шрифты (опционально):
-  ./fonts/PTMono-Regular.ttf
-  ./fonts/PTMono-Bold.ttf
-"""
 
 from __future__ import annotations
 
@@ -26,6 +7,11 @@ from pathlib import Path
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from decimal import Decimal
+
+from weasyprint import HTML
+from jinja2 import Environment, FileSystemLoader
+from dateutil.relativedelta import relativedelta
+from datetime import date
 
 from PIL import Image as PILImage
 from reportlab.graphics import renderPDF
@@ -82,7 +68,7 @@ COMPANY = {
     "rep":   "",
     "contact": "Telegram @higobi_de_at_bot",
     "email": "higobikontakt@inbox.eu",
-    "web": "higogmbh.de",
+    "web": "higobi-gmbh.de",
     "business_scope": (
         "Die Verwaltung von Grundbesitz aller Art einschließlich der Tätigkeit als Verwalter nach § 26a WEG "
         "sowie die Mietverwaltung, die Erstellung von Betriebskostenabrechnungen, der Kauf, Verkauf, die Vermietung, "
@@ -288,185 +274,116 @@ ASK_FEE = 25
 ASK_NOTARY_AMOUNT = 410
 
 # ---------- CONTRACT PDF ----------
+# ================== НОВАЯ МАТЕМАТИКА ==================
+def calculate_amortization_schedule(principal: float, tan_percent: float, months: int):
+    """Возвращает аннуитет, сумму процентов и массив для Tilgungsplan"""
+    if months <= 0 or principal <= 0:
+        return 0, 0, []
+
+    monthly_rate = (tan_percent / 100.0) / 12.0
+    if monthly_rate == 0:
+        annuity = principal / months
+    else:
+        annuity = principal * (monthly_rate / (1 - (1 + monthly_rate) ** (-months)))
+
+    schedule = []
+    remaining_balance = principal
+    total_interest_paid = 0.0
+    current_date = date.today() + relativedelta(months=1)
+
+    for i in range(1, months + 1):
+        if i == months:
+            interest_part = remaining_balance * monthly_rate
+            principal_part = remaining_balance
+            annuity = principal_part + interest_part
+        else:
+            interest_part = remaining_balance * monthly_rate
+            principal_part = annuity - interest_part
+
+        interest_rounded = round(interest_part, 2)
+        principal_rounded = round(principal_part, 2)
+        annuity_rounded = round(interest_rounded + principal_rounded, 2)
+
+        remaining_balance -= principal_rounded
+        if remaining_balance < 0.01: remaining_balance = 0.0
+
+        total_interest_paid += interest_rounded
+
+        schedule.append({
+            "nr": i,
+            "date": current_date.strftime("%d.%m.%Y"),
+            "payment": fmt_eur_de_with_cents(annuity_rounded),
+            "interest": fmt_eur_de_with_cents(interest_rounded),
+            "principal": fmt_eur_de_with_cents(principal_rounded),
+            "balance": fmt_eur_de_with_cents(remaining_balance)
+        })
+        current_date += relativedelta(months=1)
+
+    return round(annuity, 2), round(total_interest_paid, 2), schedule
+
+
+# ================== НОВЫЙ ГЕНЕРАТОР КОНТРАКТА ==================
 def build_contract_pdf(values: dict) -> bytes:
+    # 1. Забираем данные из FSM
     client = (values.get("client", "") or "").strip()
     amount = float(values.get("amount", 0) or 0)
-    tan    = float(values.get("tan", 0) or 0)
-    eff    = float(values.get("eff", 0) or 0)
-    term   = int(values.get("term", 0) or 0)
-
+    tan = float(values.get("tan", 0) or 0)
+    eff = float(values.get("eff", 0) or 0)
+    term = int(values.get("term", 0) or 0)
     bank_name = values.get("bank_name") or "Santander Consumer Bank"
-    bank_addr = values.get("bank_addr") or ""
 
-    service_fee = values.get("service_fee_eur")
     try:
-        service_fee = Decimal(str(service_fee))
+        service_fee = Decimal(str(values.get("service_fee_eur")))
     except Exception:
         service_fee = Decimal("170.00")
 
-    rate = monthly_payment(amount, tan, term)
-    interest = max(rate * term - amount, 0)
-    total = amount + interest
+    # 2. Вызываем новую математику
+    monthly_payment_val, total_interest_val, schedule_list = calculate_amortization_schedule(amount, tan, term)
+    total_debt_val = amount + total_interest_val
 
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buf, pagesize=A4,
-        leftMargin=15*mm, rightMargin=15*mm,
-        topMargin=15*mm, bottomMargin=15*mm
-    )
+    # 3. Собираем контекст для шаблона (включая абсолютные пути к картинкам)
+    context = {
+        "client": client,
+        "date_now": now_de_date(),
+        "bank_name": bank_name,
+        "company_legal": COMPANY["legal"],
+        "company_addr": COMPANY["addr"],
+        "company_reg": COMPANY["reg"],
+        "company_contact": COMPANY["contact"],
+        "company_email": COMPANY["email"],
+        "company_web": COMPANY["web"],
 
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name="H1Mono",  fontName=F_MONO_B, fontSize=15.6, leading=17.6, spaceAfter=4))
-    styles.add(ParagraphStyle(name="H2Mono",  fontName=F_MONO_B, fontSize=12.6, leading=14.6, spaceBefore=6, spaceAfter=3))
-    styles.add(ParagraphStyle(name="Mono",    fontName=F_MONO,   fontSize=10.4, leading=12.2))
-    styles.add(ParagraphStyle(name="MonoSm",  fontName=F_MONO,   fontSize=9.8,  leading=11.4))
-    styles.add(ParagraphStyle(name="MonoXs",  fontName=F_MONO,   fontSize=9.0,  leading=10.4))
-    styles.add(ParagraphStyle(name="RightXs", fontName=F_MONO,   fontSize=9.0,  leading=10.4, alignment=2))
-    styles.add(ParagraphStyle(name="SigHead", fontName=F_MONO,   fontSize=11.2, leading=13.0, alignment=1))
+        # Финансы
+        "amount": fmt_eur_de_with_cents(amount),
+        "tan": f"{tan:.2f}".replace(".", ","),
+        "eff": f"{eff:.2f}".replace(".", ","),
+        "term": term,
+        "monthly_payment": fmt_eur_de_with_cents(monthly_payment_val),
+        "service_fee": fmt_eur_de_with_cents(float(service_fee)),
+        "total_interest": fmt_eur_de_with_cents(total_interest_val),
+        "total_debt": fmt_eur_de_with_cents(total_debt_val),
+        "schedule": schedule_list,
 
-    story = []
-    story += [logos_header_weighted(doc.width, h_center=26*mm, side_ratio=0.82), Spacer(1, 4)]
-    story.append(Paragraph(f"{bank_name} – Vorabinformation / Vorvertrag #2690497", styles["H1Mono"]))
-    story.append(Paragraph(f"Vermittlung: {COMPANY['legal']}, {COMPANY['addr']}", styles["MonoSm"]))
-    reg_parts = [COMPANY["reg"]]
-    if COMPANY.get("rep"):
-        reg_parts.append(COMPANY["rep"])
-    story.append(Paragraph(" – ".join(reg_parts), styles["MonoSm"]))
-    contact_line = f"Kontakt: {COMPANY['contact']} | E-Mail: {COMPANY['email']} | Web: {COMPANY['web']}"
-    story.append(Paragraph(contact_line, styles["MonoSm"]))
-    if client:
-        story.append(Paragraph(f"Kunde: <b>{client}</b>", styles["MonoSm"]))
-    story.append(Paragraph(f"Erstellt: {now_de_date()}", styles["RightXs"]))
-    story.append(Spacer(1, 2))
+        # Пути к картинкам (WeasyPrint требует абсолютных путей)
+        "logo_higobi": os.path.abspath(ASSETS["logo_higobi"]),
+        "logo_partner1": os.path.abspath(ASSETS["logo_partner1"]),
+        "logo_partner2": os.path.abspath(ASSETS["logo_partner2"]),
+        "logo_santa": os.path.abspath(ASSETS["logo_santa"]),
+        "sign_bank": os.path.abspath(ASSETS["sign_bank"]),
+        "sign_c2g": os.path.abspath(ASSETS["sign_c2g"]),
+    }
 
-    status_tbl = Table([
-        [Paragraph("<b>Status der Anfrage:</b>", styles["Mono"]),
-         Paragraph("<b>BESTÄTIGT</b> (Bankbestätigung liegt vor)", styles["Mono"])],
-        [Paragraph("<b>Dokument-Typ:</b>", styles["Mono"]),
-         Paragraph("<b>Bestätigter Vertrag</b>", styles["Mono"])],
-        [Paragraph("<b>Noch ausstehend:</b>", styles["Mono"]),
-         Paragraph("Unterzeichnung dieses Dokuments, Zahlung der Vermittlungsvergütung, Versand des Tilgungsplans", styles["Mono"])],
-        [Paragraph("<b>Auszahlung:</b>", styles["Mono"]),
-         Paragraph(f"nur nach Unterzeichnung des Vertrags und nach Zahlung der Vermittlungsvergütung ({fmt_eur(service_fee)}).", styles["Mono"])],
-    ], colWidths=[43*mm, doc.width-43*mm])
-    status_tbl.setStyle(TableStyle([
-        ("BOX",(0,0),(-1,-1),0.9,colors.HexColor("#96A6C8")),
-        ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#EEF3FF")),
-        ("VALIGN",(0,0),(-1,-1),"TOP"),
-        ("LEFTPADDING",(0,0),(-1,-1),6), ("RIGHTPADDING",(0,0),(-1,-1),6),
-        ("TOPPADDING",(0,0),(-1,-1),3),  ("BOTTOMPADDING",(0,0),(-1,-1),3),
-    ]))
-    story += [KeepTogether(status_tbl), Spacer(1, 4)]
+    # 4. Рендерим HTML
+    # Убедитесь, что contract_template.html лежит в корневой папке бота
+    env = Environment(loader=FileSystemLoader(str(BASE_DIR)))
+    template = env.get_template('contract_template.html')
+    rendered_html = template.render(context)
 
-    params = [
-        ["Parameter", "Details"],
-        ["Nettodarlehensbetrag", fmt_eur(amount)],
-        ["Sollzinssatz (p.a.)",  f"{tan:.2f} %"],
-        ["Effektiver Jahreszins (p.a.)", f"{eff:.2f} %"],
-        ["Laufzeit",             f"{term} Monate (max. 84)"],
-        ["Monatsrate*",          fmt_eur(monthly_payment(amount, tan, term))],
-        ["Bearbeitungsgebühr",   "0 €"],
-        ["Einzugskosten",        "0 €"],
-        ["Verwaltungskosten",    "0 €"],
-        ["Versicherungsprämie (falls angefordert)", "285 €"],
-        ["Auszahlung",           f"30–60 Min nach Unterzeichnung und nach Zahlung der Vermittlungsvergütung ({fmt_eur(service_fee)})"],
-    ]
-    table_rows = []
-    for i, (k, v) in enumerate(params):
-        if i == 0:
-            table_rows.append([Paragraph(f"<b>{k}</b>", styles["Mono"]), Paragraph(f"<b>{v}</b>", styles["Mono"])])
-        else:
-            table_rows.append([Paragraph(k, styles["Mono"]), Paragraph(str(v), styles["Mono"])])
-    tbl = Table(table_rows, colWidths=[75*mm, doc.width-75*mm])
-    tbl.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#ececec")),
-        ("ALIGN",(0,0),(-1,0),"CENTER"),
-        ("GRID",(0,0),(-1,-1),0.3,colors.grey),
-        ("LEFTPADDING",(0,0),(-1,-1),5), ("RIGHTPADDING",(0,0),(-1,-1),5),
-        ("TOPPADDING",(0,0),(-1,-1),2.0), ("BOTTOMPADDING",(0,0),(-1,-1),2.0),
-    ]))
-    story += [KeepTogether(tbl), Spacer(1, 2)]
-    story.append(Paragraph("*Monatsrate berechnet zum Datum dieses Angebots.", styles["MonoXs"]))
-    story.append(Spacer(1, 4))
+    # 5. Генерируем PDF и возвращаем байты
+    # base_url нужен для корректного поиска локальных файлов (картинок)
+    pdf_bytes = HTML(string=rendered_html, base_url=str(BASE_DIR)).write_pdf()
 
-    story.append(Paragraph("Vorteile", styles["H2Mono"]))
-    for it in [
-        "• Möglichkeit, bis zu 3 Raten auszusetzen.",
-        "• Vorzeitige Rückzahlung ohne Strafgebühren.",
-        "• Zinsreduktion –0,10 %-Pkt. alle 12 pünktlichen Monate (bis mind. 5,95 %).",
-        "• Ratenpause bei Arbeitsverlust (vorbehaltlich Bankzustimmung).",
-    ]:
-        story.append(Paragraph(it, styles["MonoSm"]))
-
-    story.append(Paragraph("Sanktionen und Verzugszinsen", styles["H2Mono"]))
-    for it in [
-        "• Verzug >5 Tage: Sollzins + 2 %-Pkt.",
-        "• Mahnung: 10 € postalisch / 5 € digital.",
-        "• 2 nicht bezahlte Raten: Vertragsauflösung, Inkasso.",
-        "• Vertragsstrаfe nur bei Verletzung vertraglicher Pflichten.",
-    ]:
-        story.append(Paragraph(it, styles["MonoSm"]))
-
-    story.append(PageBreak())
-    story.append(Paragraph("Kommunikation und Service HIGOBI Immobilien GMBH", styles["H2Mono"]))
-    bullets = [
-        "• Sämtliche Kommunikation zwischen Bank und Kunden erfolgt ausschließlich über HIGOBI Immobilien GMBH.",
-        "• Vertrag und Anlagen werden als PDF via Telegram übermittelt.",
-        f"• Vermittlungsvergütung HIGOBI Immobilien GMBH: fixe Servicepauschale {fmt_eur(service_fee)} (kein Bankentgelt).",
-        f"• Auszahlung der Kreditmittel erfolgt streng erst nach Unterzeichnung des Vertrags und nach Zahlung der Vermittlungsvergütung ({fmt_eur(service_fee)}).",
-        "• Zahlungskoordinaten werden dem Kunden individuell durch den zuständigen HIGOBI-Manager mitgeteilt (keine Vorauszahlungen an Dritte).",
-    ]
-    for b in bullets:
-        story.append(Paragraph(b, styles["MonoSm"]))
-    story.append(Spacer(1, 6))
-
-    riepilogo = Table([
-        [Paragraph("Nettodarlehen", styles["Mono"]), Paragraph(fmt_eur(amount), styles["Mono"])],
-        [Paragraph("Geschätzte Zinsen (Laufzeit)", styles["Mono"]), Paragraph(fmt_eur(max(monthly_payment(amount, tan, term)*term - amount, 0)), styles["Mono"])],
-        [Paragraph("Einmalige Kosten", styles["Mono"]), Paragraph("0 €", styles["Mono"])],
-        [Paragraph("Einzugskosten", styles["Mono"]), Paragraph("0 €", styles["Mono"])],
-        [Paragraph("Gesamtschuld (Schätzung)", styles["Mono"]), Paragraph(fmt_eur(amount + max(monthly_payment(amount, tan, term)*term - amount, 0)), styles["Mono"])],
-        [Paragraph("Laufzeit", styles["Mono"]), Paragraph(f"{term} Monate", styles["Mono"])],
-    ], colWidths=[75*mm, doc.width-75*mm])
-    riepilogo.setStyle(TableStyle([
-        ("GRID",(0,0),(-1,-1),0.3,colors.grey),
-        ("BACKGROUND",(0,0),(-1,-1),colors.whitesmoke),
-        ("LEFTPADDING",(0,0),(-1,-1),5), ("RIGHTPADDING",(0,0),(-1,-1),5),
-        ("TOPPADDING",(0,0),(-1,-1),2),  ("BOTTOMPADDING",(0,0),(-1,-1),2),
-    ]))
-    story += [KeepTogether(riepilogo), Spacer(1, 6)]
-
-    story.append(Paragraph("Unterschriften", styles["H2Mono"]))
-    head_l = Paragraph("Unterschrift Kunde", styles["SigHead"])
-    head_c = Paragraph("Unterschrift Vertreter<br/>Bank", styles["SigHead"])
-    head_r = Paragraph("Unterschrift Vertreter<br/>HIGOBI Immobilien GMBH", styles["SigHead"])
-    sig_bank = img_box(ASSETS["sign_bank"], 26*mm)
-    sig_c2g  = img_box(ASSETS["sign_c2g"],  26*mm)
-    SIG_ROW_H = 30*mm
-    sig_tbl = Table(
-        [
-            [head_l, head_c, head_r],
-            ["", sig_bank or Spacer(1, SIG_ROW_H), sig_c2g or Spacer(1, SIG_ROW_H)],
-            ["", "", ""],
-        ],
-        colWidths=[doc.width/3.0, doc.width/3.0, doc.width/3.0],
-        rowHeights=[12*mm, SIG_ROW_H, 8*mm],
-        hAlign="CENTER",
-    )
-    sig_tbl.setStyle(TableStyle([
-        ("FONTNAME",(0,0),(-1,-1),F_MONO),
-        ("ALIGN",(0,0),(-1,0),"CENTER"),
-        ("VALIGN",(0,1),(-1,1),"BOTTOM"),
-        ("BOTTOMPADDING",(0,1),(-1,1),-6),
-        ("LINEBELOW",(0,2),(0,2),1.1,colors.black),
-        ("LINEBELOW",(1,2),(1,2),1.1,colors.black),
-        ("LINEBELOW",(2,2),(2,2),1.1,colors.black),
-    ]))
-    story.append(sig_tbl)
-
-    doc.build(story, onFirstPage=draw_border_and_pagenum, onLaterPages=draw_border_and_pagenum)
-    buf.seek(0)
-    return buf.read()
+    return pdf_bytes
 
 # ---------- SEPA PDF ----------
 class Typesetter:
